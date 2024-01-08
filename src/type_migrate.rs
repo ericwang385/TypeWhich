@@ -171,22 +171,22 @@ fn constraint_dif(orig: Constraint, cst: &mut Constraint, ans: &mut HashMap<u32,
     }
 }
 
-fn unification(cst: &Constraint) -> HashMap<u32, Typ> {
-    let iterator = cst.clone();
-    let mut ans : HashMap<u32, Typ> = Default::default();
-    for (t1, t2) in iterator.iter() {
-        match (t1, t2) {
-            (Typ::Metavar(i), t4) => {
-                match ans.get(i) {
-                    Some(t3) => ans.insert(*i, union_typ(t3, &check_ans(t4, &ans), &ans)),
-                    None => ans.insert(*i, t4.clone()),
-                };
-            }
-            _ => {}
-        }
-    }
-    ans
-}
+// fn unification(cst: &Constraint) -> HashMap<u32, Typ> {
+//     let iterator = cst.clone();
+//     let mut ans : HashMap<u32, Typ> = Default::default();
+//     for (t1, t2) in iterator.iter() {
+//         match (t1, t2) {
+//             (Typ::Metavar(i), t4) => {
+//                 match ans.get(i) {
+//                     Some(t3) => ans.insert(*i, union_typ(t3, &check_ans(t4, &ans), &ans)),
+//                     None => ans.insert(*i, t4.clone()),
+//                 };
+//             }
+//             _ => {}
+//         }
+//     }
+//     ans
+// }
 
 fn check_ans(t: &Typ, ans: &HashMap<u32, Typ>) -> Typ {
     match t {
