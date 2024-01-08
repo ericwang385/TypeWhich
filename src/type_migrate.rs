@@ -131,7 +131,7 @@ fn constraint_rewrite(cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
             (Typ::Metavar(_), Typ::Metavar(_)) => {
                 let orig = cst.clone();
                 for (t3, t4) in iterator.iter() {
-                    if t2 == t3 && t2 != t4 {
+                    if t2 == t3 && t2 != t4 && t4.not_any() {
                         cst.insert((t1.clone(), t4.clone()));
                     }
                 }
