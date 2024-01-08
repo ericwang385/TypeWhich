@@ -129,23 +129,32 @@ fn constraint_rewrite(cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
             }
             //TRANS-VAR
             (Typ::Metavar(_), Typ::Metavar(_)) => {
-                let orig = cst.clone();
                 for (t3, t4) in iterator.iter() {
                     if t2 == t3 && t2 != t4 && t4.not_any() {
+                        let orig = cst.clone();
                         cst.insert((t1.clone(), t4.clone()));
+                        constraint_dif(orig, cst, ans);
                     }
                 }
-                constraint_dif(orig, cst, ans);
             }
             //TRANS-FUN
-            (Typ::Metavar(_), Typ::Arr(_,_)) => {
-                let orig = cst.clone();
-                for (t3, t4) in iterator.iter() {
-                    if t1 == t3 && t2 != t4 && t4.is_arr() {
-                        cst.insert((t2.clone(), t4.clone()));
+            (Typ::Metavar(_), Typ::Arr(t21, t22)) => {
+                if t21.is_metavar() && t22.is_metavar() {
+                    for (t3, t4) in iterator.iter() {
+                        if t1 == t3 && t2 != t4 {
+                            match t4 {
+                                Typ::Arr(t41, t42) => {
+                                    if t41.is_metavar() && t42.is_metavar() {
+                                        let orig = cst.clone();
+                                        cst.insert((t2.clone(), t4.clone()));
+                                        constraint_dif(orig, cst, ans);
+                                    }
+                                }
+                                _ => return,
+                            };
+                        }
                     }
                 }
-                constraint_dif(orig, cst, ans);
             }
             _ => {}
         }
@@ -155,10 +164,12 @@ fn constraint_rewrite(cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
     for (t1, t2) in iterator.iter() {
         match (t1, t2) {
             (Typ::Metavar(i), _) => {
-                match ans.get(i) {
-                    Some(t3) => ans.insert(*i, union_typ(t3, &check_ans(t2, &ans), &ans)),
-                    None => ans.insert(*i, union_typ(t1, &check_ans(t2, &ans), &ans)),
-                };
+                if t2.not_any() {
+                    match ans.get(i) {
+                        Some(t3) => ans.insert(*i, union_typ(t3, &check_ans(t2, &ans), &ans)),
+                        None => ans.insert(*i, check_ans(t2, &ans)),
+                    };
+                }
             }
             _ => {}
         }
@@ -201,16 +212,13 @@ fn check_ans(t: &Typ, ans: &HashMap<u32, Typ>) -> Typ {
 fn union_typ(t1: &Typ, t2: &Typ, ans: &HashMap<u32, Typ>) -> Typ {
     match (t1, t2) {
         (Typ::Metavar(i), Typ::Metavar(j)) => {if i<j {Typ::Metavar(*i)} else {Typ::Metavar(*j)}}
-        (Typ::Any, _) | (_, Typ::Any) => Typ::Any,
         (Typ::Metavar(_), t) | (t, Typ::Metavar(_)) => t.clone(),
         (Typ::Arr(t11, t12), Typ::Arr(t21, t22)) =>
             Typ::Arr(
                 Box::new(union_typ(&check_ans(t11, &ans), &check_ans(t21, &ans), &ans)), 
                 Box::new(union_typ(&check_ans(t12, &ans), &check_ans(t22, &ans), &ans))
             ),
-        (t3, t4) => {
-            if t3==t4 {t3.clone()} else {Typ::Any}
-        }
+        _ => if t1==t2 {t1.clone()} else {Typ::Any}
     }
 }
 
