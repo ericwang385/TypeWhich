@@ -29,7 +29,7 @@ impl Coerce {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Hash, Eq)]
 pub enum Typ {
     Unit,
     Int,
@@ -95,6 +95,13 @@ impl Typ {
     }
     pub fn is_metavar(&self) -> bool {
         matches!(self, Typ::Metavar(..))
+    }
+
+    pub fn not_any(&self) -> bool {
+        match self {
+            Typ::Any => false,
+            _ => true
+        }
     }
 
     pub fn join(&self, other: &Typ) -> Typ {
