@@ -11,7 +11,9 @@ type Constraint = HashSet<(Typ, Typ)>;
 
 pub fn type_infer(mut exp: Exp, env: &Env) -> Result<Exp, String> {
     let (t, mut cst) = constraint_gen(&mut exp, env);
-    let mut ans : HashMap<u32, Typ> = Default::default();
+    let n = curr_metavar();
+    // let mut ans = HashMap::new();
+    let mut ans = (0..n).map(|x| (x, Typ::Metavar(x))).collect::<HashMap<u32, Typ>>();
     constraint_rewrite(&mut cst, &mut ans);
     for i in cst.iter() {
         println!("Constraints:\n{:?}\n", i);
@@ -95,7 +97,6 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (Typ, Constraint) {
 fn outer_coerce(t: Typ, exp: &mut Exp, mut cst: Constraint) -> (Typ, Constraint) {
     let alpha = next_metavar();
     coerce(t.clone(), alpha.clone(), exp);
-    // println!("Outer Coerce: {:?} Constraint ({},{})", exp, alpha, t);
     cst.insert((alpha.clone(), t));
     (alpha, cst)
 }
@@ -106,7 +107,6 @@ fn coerce(t1: Typ, t2: Typ, exp: &mut Exp) {
 
 fn constraint_rewrite(cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
     let iterator = cst.clone();
-
     //SYM
     for (t1, t2) in iterator.iter() {
         if t1.not_any() && t2.not_any() {
@@ -130,7 +130,7 @@ fn constraint_rewrite(cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
             //TRANS-VAR
             (Typ::Metavar(_), Typ::Metavar(_)) => {
                 for (t3, t4) in iterator.iter() {
-                    if t2 == t3 && t2 != t4 && t4.not_any() {
+                    if t2 == t3 && t2 != t4 && t4.is_metavar() {
                         let orig = cst.clone();
                         cst.insert((t1.clone(), t4.clone()));
                         constraint_dif(orig, cst, ans);
@@ -150,7 +150,7 @@ fn constraint_rewrite(cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
                                         constraint_dif(orig, cst, ans);
                                     }
                                 }
-                                _ => return,
+                                _ => {},
                             };
                         }
                     }
@@ -165,10 +165,21 @@ fn constraint_rewrite(cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
         match (t1, t2) {
             (Typ::Metavar(i), _) => {
                 if t2.not_any() {
+                    let orig = ans.clone();
+                    
                     match ans.get(i) {
-                        Some(t3) => ans.insert(*i, union_typ(t3, &check_ans(t2, &ans), &ans)),
-                        None => ans.insert(*i, check_ans(t2, &ans)),
+                        Some(Typ::Any) => {}
+                        Some(t3) => {
+                            println!("ans in SUBST: {:?} when solve constraint {} = {}", ans, t1, t2);
+                            let t4 = check_ans(t2, &ans);
+                            let t5 = union_typ(t3, &t4, &ans);
+                            ans.insert(*i, t5);
+                            println!("ans in SUBST: {:?} after solve constraint {} = {}", ans, t1, t2);
+                        }
+                        None => panic!("error in SUBST")
                     };
+                    
+                    ans_dif(orig, cst, ans);
                 }
             }
             _ => {}
@@ -176,28 +187,17 @@ fn constraint_rewrite(cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
     }
 }
 
-fn constraint_dif(orig: Constraint, cst: &mut Constraint, ans: &mut HashMap<u32, Typ>){
-    if !orig.symmetric_difference(cst.clone()).is_empty() {
+fn ans_dif(orig: HashMap<u32, Typ>, cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
+    if !orig.symmetric_difference(ans.clone()).is_empty() {
         constraint_rewrite(cst, ans);
     }
 }
 
-// fn unification(cst: &Constraint) -> HashMap<u32, Typ> {
-//     let iterator = cst.clone();
-//     let mut ans : HashMap<u32, Typ> = Default::default();
-//     for (t1, t2) in iterator.iter() {
-//         match (t1, t2) {
-//             (Typ::Metavar(i), t4) => {
-//                 match ans.get(i) {
-//                     Some(t3) => ans.insert(*i, union_typ(t3, &check_ans(t4, &ans), &ans)),
-//                     None => ans.insert(*i, t4.clone()),
-//                 };
-//             }
-//             _ => {}
-//         }
-//     }
-//     ans
-// }
+fn constraint_dif(orig: Constraint, cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
+    if !orig.symmetric_difference(cst.clone()).is_empty() {
+        constraint_rewrite(cst, ans);
+    }
+}
 
 fn check_ans(t: &Typ, ans: &HashMap<u32, Typ>) -> Typ {
     match t {
@@ -212,12 +212,12 @@ fn check_ans(t: &Typ, ans: &HashMap<u32, Typ>) -> Typ {
 fn union_typ(t1: &Typ, t2: &Typ, ans: &HashMap<u32, Typ>) -> Typ {
     match (t1, t2) {
         (Typ::Metavar(i), Typ::Metavar(j)) => {if i<j {Typ::Metavar(*i)} else {Typ::Metavar(*j)}}
-        (Typ::Metavar(_), t) | (t, Typ::Metavar(_)) |
+        (Typ::Metavar(_), t) | (t, Typ::Metavar(_)) => t.clone(),
         (Typ::Any, t) | (t, Typ::Any) => t.clone(),
         (Typ::Arr(t11, t12), Typ::Arr(t21, t22)) =>
             Typ::Arr(
-                Box::new(union_typ(&check_ans(t11, &ans), &check_ans(t21, &ans), &ans)), 
-                Box::new(union_typ(&check_ans(t12, &ans), &check_ans(t22, &ans), &ans))
+                Box::new(union_typ(t11, t21, &ans)), 
+                Box::new(union_typ(t12, t22, &ans))
             ),
         _ => if t1==t2 {t1.clone()} else {Typ::Any}
     }
