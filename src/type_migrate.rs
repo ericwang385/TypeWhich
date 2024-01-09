@@ -212,7 +212,8 @@ fn check_ans(t: &Typ, ans: &HashMap<u32, Typ>) -> Typ {
 fn union_typ(t1: &Typ, t2: &Typ, ans: &HashMap<u32, Typ>) -> Typ {
     match (t1, t2) {
         (Typ::Metavar(i), Typ::Metavar(j)) => {if i<j {Typ::Metavar(*i)} else {Typ::Metavar(*j)}}
-        (Typ::Metavar(_), t) | (t, Typ::Metavar(_)) => t.clone(),
+        (Typ::Metavar(_), t) | (t, Typ::Metavar(_)) |
+        (Typ::Any, t) | (t, Typ::Any) => t.clone(),
         (Typ::Arr(t11, t12), Typ::Arr(t21, t22)) =>
             Typ::Arr(
                 Box::new(union_typ(&check_ans(t11, &ans), &check_ans(t21, &ans), &ans)), 
