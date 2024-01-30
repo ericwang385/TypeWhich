@@ -1,5 +1,5 @@
 use super::syntax::*;
-use im_rc::HashMap;
+use im::HashMap;
 
 type Env = HashMap<String, Typ>;
 

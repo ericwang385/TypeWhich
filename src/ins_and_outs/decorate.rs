@@ -1,5 +1,5 @@
 use super::syntax::*;
-use im_rc::HashMap;
+use im::HashMap;
 
 pub fn decorate(exp: &mut Exp, solution: &HashMap<Typ, Typ>) {
     match exp {

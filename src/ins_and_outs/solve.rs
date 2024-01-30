@@ -1,6 +1,6 @@
 use super::syntax::Typ;
 use super::Closure;
-use im_rc::HashMap;
+use im::HashMap;
 
 pub fn solve_closure(cs: Closure) -> HashMap<Typ, Typ> {
     // This is called T+ in the paper

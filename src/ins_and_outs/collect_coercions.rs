@@ -1,5 +1,5 @@
 use super::syntax::*;
-use im_rc::{HashMap, HashSet};
+use im::{HashMap, HashSet};
 
 /// This also performs Base and Comp of the closure computation
 pub fn compile_coercions(x: Exp) -> (Exp, Typ, HashSet<(Typ, Typ)>) {

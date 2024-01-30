@@ -15,11 +15,11 @@ pub fn type_infer(mut exp: Exp, env: &Env) -> Result<Exp, String> {
     // let mut ans = HashMap::new();
     let mut ans = (0..n).map(|x| (x, Typ::Metavar(x))).collect::<HashMap<u32, Typ>>();
     constraint_rewrite(&mut cst, &mut ans);
-    for i in cst.iter() {
-        println!("Constraints:\n{:?}\n", i);
-    }
+    // for i in cst.iter() {
+    //     println!("Constraints:\n{:?}\n", i);
+    // }
     println!("After Unification:\n{:?}\n", ans);
-    println!("Before Annotation:\n{:?}\n", exp);
+    // println!("Before Annotation:\n{:?}\n", exp);
     annotate(&ans, &mut exp);
     println!("After Annotation:\n{:?}\n", exp);
     println!("After Annotation Pretty:\n{}\n", exp);
@@ -106,13 +106,14 @@ fn coerce(t1: Typ, t2: Typ, exp: &mut Exp) {
 }
 
 fn constraint_rewrite(cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
+    // let orig = cst.clone();
     let iterator = cst.clone();
     //SYM
     for (t1, t2) in iterator.iter() {
         if t1.not_any() && t2.not_any() {
-            let orig = cst.clone();
+            // let orig = cst.clone();
             cst.insert((t2.clone(), t1.clone()));
-            constraint_dif(orig, cst, ans);
+            // constraint_dif(orig, cst, ans);
         }
     }
     
@@ -121,22 +122,22 @@ fn constraint_rewrite(cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
             //EXP
             (Typ::Arr(t11, t12), Typ::Arr(t21, t22)) => {
                 if t11.not_any() && t12.not_any() && t21.not_any() && t22.not_any() {
-                    let orig = cst.clone();
+                    // let orig = cst.clone();
                     cst.insert((*t11.clone(), *t21.clone()));
                     cst.insert((*t12.clone(), *t22.clone()));
-                    constraint_dif(orig, cst, ans);
+                    // constraint_dif(orig, cst, ans);
                 }
             }
             //TRANS-VAR
             (Typ::Metavar(_), Typ::Metavar(_)) => {
-                let orig = cst.clone();
+                // let orig = cst.clone();
                 for (t3, t4) in iterator.iter() {
                     if t2 == t3 && t2 != t4 && t4.is_metavar() {
-                        let orig = cst.clone();
+                        // let orig = cst.clone();
                         cst.insert((t1.clone(), t4.clone()));
                     }
                 }
-                constraint_dif(orig, cst, ans);
+                // constraint_dif(orig, cst, ans);
             }
             //TRANS-FUN
             (Typ::Metavar(_), Typ::Arr(t21, t22)) => {
@@ -146,12 +147,12 @@ fn constraint_rewrite(cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
                             match t4 {
                                 Typ::Arr(t41, t42) => {
                                     if t41.is_metavar() && t42.is_metavar() {
-                                        let orig = cst.clone();
+                                        // let orig = cst.clone();
                                         cst.insert((t2.clone(), t4.clone()));
-                                        constraint_dif(orig, cst, ans);
+                                        // constraint_dif(orig, cst, ans);
                                     }
                                 }
-                                _ => return,
+                                _ => {},
                             };
                         }
                     }
@@ -165,23 +166,24 @@ fn constraint_rewrite(cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
     for (t1, t2) in iterator.iter() {
         match (t1, t2) {
             (Typ::Metavar(i), _) => {
-                if t2.not_any() {
-                    match ans.get(i) {
-                        Some(t3) => ans.insert(*i, union_typ(t3, &check_ans(t2, &ans), &ans)),
-                        None => ans.insert(*i, check_ans(t2, &ans)),
-                    };
-                }
+                match ans.get(i) {
+                    Some(t3) => ans.insert(*i, union_typ(t3, &check_ans(t2, &ans), &ans)),
+                    None => ans.insert(*i, check_ans(t2, &ans)),
+                };
             }
             _ => {}
         }
+        println!("Constraint {:?} = {:?}, we have {:?} \n", t1, t2, ans);
     }
+
+    constraint_dif(iterator, cst, ans)
 }
 
-fn ans_dif(orig: HashMap<u32, Typ>, cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
-    if !orig.symmetric_difference(ans.clone()).is_empty() {
-        constraint_rewrite(cst, ans);
-    }
-}
+// fn ans_dif(orig: HashMap<u32, Typ>, cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
+//     if !orig.symmetric_difference(ans.clone()).is_empty() {
+//         constraint_rewrite(cst, ans);
+//     }
+// }
 
 fn constraint_dif(orig: Constraint, cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
     if !orig.symmetric_difference(cst.clone()).is_empty() {
@@ -202,9 +204,9 @@ fn check_ans(t: &Typ, ans: &HashMap<u32, Typ>) -> Typ {
 fn union_typ(t1: &Typ, t2: &Typ, ans: &HashMap<u32, Typ>) -> Typ {
     match (t1, t2) {
         (Typ::Metavar(i), Typ::Metavar(j)) => {if i<j {Typ::Metavar(*i)} else {Typ::Metavar(*j)}}
-        (Typ::Any, _) | (_, Typ::Any) => Typ::Any,
-        (Typ::Metavar(_), t) | (t, Typ::Metavar(_)) => t.clone(),
-        (Typ::Any, t) | (t, Typ::Any) => t.clone(),
+        (Typ::Metavar(_), t) | (t, Typ::Metavar(_)) => {
+            if occur(t1, t2) {Typ::Any} else {t.clone()}
+        }
         (Typ::Arr(t11, t12), Typ::Arr(t21, t22)) =>
             Typ::Arr(
                 Box::new(union_typ(t11, t21, &ans)), 
@@ -213,6 +215,14 @@ fn union_typ(t1: &Typ, t2: &Typ, ans: &HashMap<u32, Typ>) -> Typ {
         (t3, t4) => {
             if t3==t4 {t3.clone()} else {Typ::Any}
         }
+    }
+}
+
+fn occur(t1: &Typ, t2: &Typ) -> bool {
+    match t2 {
+        Typ::Metavar(_) => if t1==t2 {true} else {false},
+        Typ::Arr(t21, t22) => occur(t1, t21) || occur(t1, t22),
+        _ => false
     }
 }
 
@@ -264,7 +274,7 @@ fn annotate(ans: &HashMap<u32, Typ>, exp: &mut Exp) {
 
 #[cfg(test)]
 mod test {
-    use crate::{parser::parse, syntax::{Exp, Typ}, type_migrate::annotate};
+    use crate::{parser::parse, syntax::Exp};
 
     use super::type_infer;
 
@@ -301,8 +311,12 @@ mod test {
     }
 
     #[test]
-    fn fun_as_num() {
-        test_migrate("let f = fun x . x + 1 in
-        f true");
+    fn fun_app() {
+        test_migrate("(fun f . f true) (fun x . x + 100)");
+    }
+
+    #[test]
+    fn rank2_poly() {
+        test_migrate("(fun i.(fun a. (i true)) (i 5) ) (fun x.x)");
     }
 }

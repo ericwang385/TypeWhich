@@ -1,7 +1,7 @@
 //! An evaluator for GTLC + extensions needed for the comparative evaluation.
 use super::syntax::*;
 use derive_more::Display;
-use im_rc::HashMap;
+use im::HashMap;
 
 type Env<'a> = HashMap<&'a Id, Val<'a>>;
 

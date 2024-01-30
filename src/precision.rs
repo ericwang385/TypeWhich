@@ -11,7 +11,7 @@
 
 use super::syntax::{Exp, Typ, Id};
 
-type Env = im_rc::HashMap<Id, Id>;
+type Env = im::HashMap<Id, Id>;
 
 pub fn typ_lt(t1: &Typ, t2: &Typ) -> bool {
     use Typ::*;

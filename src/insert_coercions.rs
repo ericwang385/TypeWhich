@@ -7,7 +7,7 @@
 //! At the moment, it only supports the fragment of the language we need for
 //! the comparative evaluation.
 use super::syntax::{Coerce, Exp, GroundTyp, Id, Lit, Typ};
-use im_rc::HashMap;
+use im::HashMap;
 
 type Env = HashMap<Id, Typ>;
 

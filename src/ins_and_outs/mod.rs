@@ -11,7 +11,7 @@ const DEBUG: bool = false;
 #[cfg(test)]
 const DEBUG: bool = true;
 
-type Closure = im_rc::HashSet<(syntax::Typ, syntax::Typ)>;
+type Closure = im::HashSet<(syntax::Typ, syntax::Typ)>;
 
 pub fn typeinf_portable(exp: crate::syntax::Exp) -> crate::syntax::Exp {
     let internal_e =
