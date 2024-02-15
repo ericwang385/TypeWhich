@@ -27,3 +27,4 @@ serde = { version = "1.*", features = ["derive"] }
 serde_yaml = "*"
 derive_more = "*"
 wait-timeout = "*"
+either = "*"

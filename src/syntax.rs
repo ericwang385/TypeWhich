@@ -2,7 +2,7 @@ use crate::parser::next_metavar;
 
 /// Several ground types are presently missing. But, these are all we need
 /// for the non-Grift benchmarks.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum GroundTyp {
     Int,
     Bool,

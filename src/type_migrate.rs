@@ -1,16 +1,18 @@
 use crate::parser::{next_metavar, curr_metavar};
+use crate::syntax::GroundTyp;
 
 use super::syntax::{Exp, Typ};
 use super::syntax::Exp::*;
-use im::{HashSet, HashMap, hashset, iter};
+use im::{HashSet, HashMap};
 use std::boxed::Box;
+use either::Either::{self, Left, Right};
 
 type Env = HashMap<String, Typ>;
-type Constraint = HashSet<(Typ, Typ)>;
-
+type Hom = HashMap<i32, (Typ, Typ)>;
+type Constraint = HashSet<(Either<Typ, GroundTyp>, Either<Typ, GroundTyp>, bool)>;
 
 pub fn type_infer(mut exp: Exp, env: &Env) -> Result<Exp, String> {
-    let (t, mut cst) = constraint_gen(&mut exp, env);
+    let (_, mut cst, mut hom) = constraint_gen(&mut exp, env);
     let n = curr_metavar();
     // let mut ans = HashMap::new();
     let mut ans = (0..n).map(|x| (x, Typ::Metavar(x))).collect::<HashMap<u32, Typ>>();
@@ -30,12 +32,12 @@ pub fn type_check(exp: &Exp) -> Result<Typ, String> {
     todo!()
 }
 
-fn constraint_gen(exp: &mut Exp, env: &Env) -> (Typ, Constraint) {
+fn constraint_gen(exp: &mut Exp, env: &Env) -> (Typ, Constraint, Hom) {
     match exp {
         PrimCoerce(..) => panic!("PrimCoerce should not appear in source"),
         Lit(lit) => {
             let t1 = lit.typ();
-            outer_coerce(t1, exp, Default::default())
+            outer_coerce(t1, exp, Default::default(), Default::default())
         },
         Var(x) => {
             let t1 = env.get(x)
@@ -90,15 +92,26 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (Typ, Constraint) {
             let (t2, phi2) = constraint_gen(e2, &env);
             (t2, phi1.union(phi2))
         }
+        If(con, e1, e2) => {
+            todo!()
+        }
         _ => todo!()
     }
 }
 
-fn outer_coerce(t: Typ, exp: &mut Exp, mut cst: Constraint) -> (Typ, Constraint) {
+fn outer_coerce(t: Typ, exp: &mut Exp, mut cst: Constraint, mut hom: Hom) -> (Typ, Constraint, Hom) {
     let alpha = next_metavar();
     coerce(t.clone(), alpha.clone(), exp);
-    cst.insert((alpha.clone(), t));
-    (alpha, cst)
+    match t {
+        Typ::Arr(_, _) => {
+            cst.insert((Right(GroundTyp::Fun), Left(alpha), true));
+            todo!()
+        }
+        _ => {
+            cst.insert((Left(t), Left(alpha), true));
+        }
+    }
+    (alpha, cst, hom)
 }
 
 fn coerce(t1: Typ, t2: Typ, exp: &mut Exp) {
