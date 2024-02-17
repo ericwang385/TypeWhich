@@ -8,23 +8,16 @@ use std::boxed::Box;
 use either::Either::{self, Left, Right};
 
 type Env = HashMap<String, Typ>;
-type Hom = HashMap<i32, (Typ, Typ)>;
+type Hom = HashMap<Typ, (Typ, Typ)>;
 type Constraint = HashSet<(Either<Typ, GroundTyp>, Either<Typ, GroundTyp>, bool)>;
 
+// Entry Point
 pub fn type_infer(mut exp: Exp, env: &Env) -> Result<Exp, String> {
     let (_, mut cst, mut hom) = constraint_gen(&mut exp, env);
     let n = curr_metavar();
-    // let mut ans = HashMap::new();
     let mut ans = (0..n).map(|x| (x, Typ::Metavar(x))).collect::<HashMap<u32, Typ>>();
     constraint_rewrite(&mut cst, &mut ans);
-    // for i in cst.iter() {
-    //     println!("Constraints:\n{:?}\n", i);
-    // }
-    // println!("After Unification:\n{:?}\n", ans);
-    // println!("Before Annotation:\n{:?}\n", exp);
     annotate(&ans, &mut exp);
-    // println!("After Annotation:\n{:?}\n", exp);
-    // println!("After Annotation Pretty:\n{}\n", exp);
     Ok(exp)
 }
 
@@ -43,57 +36,77 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (Typ, Constraint, Hom) {
             let t1 = env.get(x)
                 .unwrap_or_else(|| panic!("unbound identifier {}", x))
                 .clone();
-            // (t1, Default::default())
-            outer_coerce(t1, exp, Default::default())
+            outer_coerce(t1, exp, Default::default(), Default::default())
         },
         Fun(f, t1, body) => {
             let mut env = env.clone();
             env.insert(f.clone(), t1.clone());
-            let (t2, phi) = constraint_gen(body, &env);
+            let (t2, phi, hom) = constraint_gen(body, &env);
             let funt = Typ::Arr(Box::new(t1.clone()), Box::new(t2));
-            outer_coerce(funt, exp, phi)
+            outer_coerce(funt, exp, phi, hom)
         },
         App(e1, e2) => {
-            let (t1, phi1) = constraint_gen(e1, &env);
-            let (t2, phi2) = constraint_gen(e2, &env);
+            let (t1, phi1, hom1) = constraint_gen(e1, &env);
+            let (t2, phi2, hom2) = constraint_gen(e2, &env);
             let mut phi = phi1.union(phi2);
+            let mut hom = hom1.union(hom2);
             let alpha = next_metavar();
             let beta = next_metavar();
+            let dom = next_metavar();
+            let cod = next_metavar();
             let funt = Typ::Arr(Box::new(alpha.clone()), Box::new(beta.clone()));
             coerce(t1.clone(), funt.clone(), e1);
             coerce(t2.clone(), alpha.clone(), e2);
-            phi.insert((t1, funt));
-            phi.insert((alpha, t2));
-            (beta, phi)
+            hom.insert(alpha.clone(), (dom.clone(), cod.clone()));
+            phi.insert((Left(t1), Left(funt), false));
+            phi.insert((Left(alpha.clone()), Left(t2), false));
+            phi.insert((Left(alpha), Left(dom), true));
+            phi.insert((Left(cod), Left(beta.clone()), false));
+            (beta, phi, hom)
         },
         UnaryOp(op, e) => {
             let (t1, ret) = op.typ();
-            let (t2, mut phi) = constraint_gen(e, &env);
-            coerce(t2.clone(), t1.clone(), e);
-            phi.insert((t1, t2));
-            outer_coerce(ret, e, phi)
+            let t11 = t1.to_groundtyp().unwrap_or_else(|| panic!("UnaryOp with higher-order behavior"));
+            let (t2, mut phi, hom) = constraint_gen(e, &env);
+            coerce(t2.clone(), t1, e);
+            phi.insert((Left(t2), Right(t11), false));
+            outer_coerce(ret, e, phi, hom)
         },
         BinaryOp(op, e1, e2) => {
             let (t1, t2, ret) = op.typ();
-            let (t3, phi1) = constraint_gen(e1, &env);
-            let (t4, phi2) = constraint_gen(e2, &env);
+            let t11 = t1.to_groundtyp().unwrap_or_else(|| panic!("BinaryOp with higher-order behavior"));
+            let t22 = t2.to_groundtyp().unwrap_or_else(|| panic!("BinaryOp with higher-order behavior"));
+            let (t3, phi1, hom1) = constraint_gen(e1, &env);
+            let (t4, phi2, hom2) = constraint_gen(e2, &env);
             let mut phi = phi1.union(phi2);
-            coerce(t3.clone(), t1.clone(), e1);
-            // println!("In BinOp: {:?} Constraint ({},{})", e1, t1, t3);
-            coerce(t4.clone(), t2.clone(), e2);
-            phi.insert((t3, t1));
-            phi.insert((t4, t2));
-            outer_coerce(ret, exp, phi)
+            let hom = hom1.union(hom2);
+            coerce(t3.clone(), t1, e1);
+            coerce(t4.clone(), t2, e2);
+            phi.insert((Left(t3), Right(t11), false));
+            phi.insert((Left(t4), Right(t22), false));
+            outer_coerce(ret, exp, phi, hom)
         },
         Let(x, e1, e2) => {
-            let (t1, phi1) = constraint_gen(e1, &env);
+            let (t1, phi1, hom1) = constraint_gen(e1, &env);
             let mut env = env.clone();
             env.insert(x.clone(), t1);
-            let (t2, phi2) = constraint_gen(e2, &env);
-            (t2, phi1.union(phi2))
+            let (t2, phi2, hom2) = constraint_gen(e2, &env);
+            (t2, phi1.union(phi2), hom1.union(hom2))
         }
-        If(con, e1, e2) => {
-            todo!()
+        If(cond, e1, e2) => {
+            let (t1, phi1, hom1) = constraint_gen(cond, &env);
+            let (t2, phi2, hom2) = constraint_gen(e1, &env);
+            let (t3, phi3, hom3) = constraint_gen(e2, &env);
+            let mut phi = phi1.union(phi2).union(phi3);
+            let hom = hom1.union(hom2).union(hom3);
+            let alpha = next_metavar();
+            coerce(t1.clone(), Typ::Bool, cond);
+            coerce(t2.clone(), alpha.clone(), e1);
+            coerce(t3.clone(), alpha.clone(), e2);
+            phi.insert((Left(t1), Right(GroundTyp::Bool), false));
+            phi.insert((Left(t2), Left(alpha.clone()), true));
+            phi.insert((Left(t3), Left(alpha.clone()), true));
+            (alpha, phi, hom)
         }
         _ => todo!()
     }
@@ -103,12 +116,19 @@ fn outer_coerce(t: Typ, exp: &mut Exp, mut cst: Constraint, mut hom: Hom) -> (Ty
     let alpha = next_metavar();
     coerce(t.clone(), alpha.clone(), exp);
     match t {
-        Typ::Arr(_, _) => {
-            cst.insert((Right(GroundTyp::Fun), Left(alpha), true));
-            todo!()
+        Typ::Int | Typ::Bool => {
+            cst.insert((Right(t.to_groundtyp().unwrap()), Left(alpha.clone()), true));
+        }
+        Typ::Arr(t1, t2) => {
+            let beta = next_metavar();
+            let gamma = next_metavar();
+            hom.insert(alpha.clone(), (beta.clone(), gamma.clone()));
+            cst.insert((Right(GroundTyp::Fun), Left(alpha.clone()), true));
+            cst.insert((Left(beta), Left(*t1), false));
+            cst.insert((Left(*t2), Left(gamma), true));
         }
         _ => {
-            cst.insert((Left(t), Left(alpha), true));
+            cst.insert((Left(t), Left(alpha.clone()), true));
         }
     }
     (alpha, cst, hom)
@@ -119,117 +139,57 @@ fn coerce(t1: Typ, t2: Typ, exp: &mut Exp) {
 }
 
 fn constraint_rewrite(cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
-    // let orig = cst.clone();
-    let iterator = cst.clone();
-    let orig_ans = ans.clone();
-    //SYM
-    for (t1, t2) in iterator.iter() {
-        if t1.not_any() && t2.not_any() {
-            cst.insert((t2.clone(), t1.clone()));
-        }
-    }
-    
-    for (t1, t2) in iterator.iter() {
-        match (t1, t2) {
-            //EXP
-            (Typ::Arr(t11, t12), Typ::Arr(t21, t22)) => {
-                if t11.not_any() && t12.not_any() && t21.not_any() && t22.not_any() {
-                    cst.insert((*t11.clone(), *t21.clone()));
-                    cst.insert((*t12.clone(), *t22.clone()));
-                }
-            }
-            //TRANS-VAR
-            (Typ::Metavar(_), Typ::Metavar(_)) => {
-                for (t3, t4) in iterator.iter() {
-                    if t2 == t3 && t2 != t4 {
-                        cst.insert((t1.clone(), t4.clone()));
-                    }
-                }
-            }
-            //TRANS-FUN
-            (Typ::Metavar(_), Typ::Arr(t21, t22)) => {
-                if t21.is_metavar() && t22.is_metavar() {
-                    for (t3, t4) in iterator.iter() {
-                        if t1 == t3 && t2 != t4 {
-                            match t4 {
-                                Typ::Arr(t41, t42) => {
-                                    if t41.is_metavar() && t42.is_metavar() {
-                                        cst.insert((t2.clone(), t4.clone()));
-                                    }
-                                }
-                                _ => {},
-                            };
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    //SUBST
-    for (t1, t2) in iterator.iter() {
-        match (t1, t2) {
-            (Typ::Metavar(i), _) => {
-                ans.insert(*i, union_typ(&check_ans(t1, &ans), &check_ans(t2, &ans), &ans));
-            }
-            _ => {}
-        }
-        // println!("Constraint {:?} = {:?}, we have {:?} \n", t1, t2, ans);
-    }
-
-    constraint_dif(iterator, cst, ans);
-    ans_dif(orig_ans, cst, ans)
+    todo!()
 }
 
-fn ans_dif(orig: HashMap<u32, Typ>, cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
-    if !orig.symmetric_difference(ans.clone()).is_empty() {
-        constraint_rewrite(cst, ans);
-    }
-}
+// fn ans_dif(orig: HashMap<u32, Typ>, cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
+//     if !orig.symmetric_difference(ans.clone()).is_empty() {
+//         constraint_rewrite(cst, ans);
+//     }
+// }
 
-fn constraint_dif(orig: Constraint, cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
-    if !orig.symmetric_difference(cst.clone()).is_empty() {
-        constraint_rewrite(cst, ans);
-    }
-}
+// fn constraint_dif(orig: Constraint, cst: &mut Constraint, ans: &mut HashMap<u32, Typ>) {
+//     if !orig.symmetric_difference(cst.clone()).is_empty() {
+//         constraint_rewrite(cst, ans);
+//     }
+// }
 
-fn check_ans(t: &Typ, ans: &HashMap<u32, Typ>) -> Typ {
-    match t {
-        Typ::Metavar(i) => match ans.get(i) {
-            Some(t1) => t1.clone(),
-            None => t.clone()
-        }
-        Typ::Arr(t1, t2) => 
-            Typ::Arr(Box::new(check_ans(t1, &ans)), Box::new(check_ans(t2, &ans))),
-        _ => t.clone()
-    }
-}
+// fn check_ans(t: &Typ, ans: &HashMap<u32, Typ>) -> Typ {
+//     match t {
+//         Typ::Metavar(i) => match ans.get(i) {
+//             Some(t1) => t1.clone(),
+//             None => t.clone()
+//         }
+//         Typ::Arr(t1, t2) => 
+//             Typ::Arr(Box::new(check_ans(t1, &ans)), Box::new(check_ans(t2, &ans))),
+//         _ => t.clone()
+//     }
+// }
 
-fn union_typ(t1: &Typ, t2: &Typ, ans: &HashMap<u32, Typ>) -> Typ {
-    match (t1, t2) {
-        (Typ::Metavar(i), Typ::Metavar(j)) => {if i<j {Typ::Metavar(*i)} else {Typ::Metavar(*j)}}
-        (Typ::Metavar(_), t) | (t, Typ::Metavar(_)) => {
-            if occur(t1, t2) {Typ::Any} else {t.clone()}
-        }
-        (Typ::Arr(t11, t12), Typ::Arr(t21, t22)) =>
-            Typ::Arr(
-                Box::new(union_typ(t11, t21, &ans)), 
-                Box::new(union_typ(t12, t22, &ans))
-            ),
-        (t3, t4) => {
-            if t3==t4 {t3.clone()} else {Typ::Any}
-        }
-    }
-}
+// fn union_typ(t1: &Typ, t2: &Typ, ans: &HashMap<u32, Typ>) -> Typ {
+//     match (t1, t2) {
+//         (Typ::Metavar(i), Typ::Metavar(j)) => {if i<j {Typ::Metavar(*i)} else {Typ::Metavar(*j)}}
+//         (Typ::Metavar(_), t) | (t, Typ::Metavar(_)) => {
+//             if occur(t1, t2) {Typ::Any} else {t.clone()}
+//         }
+//         (Typ::Arr(t11, t12), Typ::Arr(t21, t22)) =>
+//             Typ::Arr(
+//                 Box::new(union_typ(t11, t21, &ans)), 
+//                 Box::new(union_typ(t12, t22, &ans))
+//             ),
+//         (t3, t4) => {
+//             if t3==t4 {t3.clone()} else {Typ::Any}
+//         }
+//     }
+// }
 
-fn occur(t1: &Typ, t2: &Typ) -> bool {
-    match t2 {
-        Typ::Metavar(_) => if t1==t2 {true} else {false},
-        Typ::Arr(t21, t22) => occur(t1, t21) || occur(t1, t22),
-        _ => false
-    }
-}
+// fn occur(t1: &Typ, t2: &Typ) -> bool {
+//     match t2 {
+//         Typ::Metavar(_) => if t1==t2 {true} else {false},
+//         Typ::Arr(t21, t22) => occur(t1, t21) || occur(t1, t22),
+//         _ => false
+//     }
+// }
 
 fn annotate_metatyp(ans: &HashMap<u32, Typ>, t: &Typ) -> Typ {
     match t {

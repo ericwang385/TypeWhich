@@ -127,6 +127,21 @@ impl Typ {
             Typ::Arr(..) | Typ::List(..) | Typ::Pair(..) | Typ::Box(..) | Typ::Vect(..) => true,
         }
     }
+
+    pub fn to_groundtyp(&self) -> Option<GroundTyp> {
+        match self {
+            Typ::Int => Some(GroundTyp::Int),
+            Typ::Bool => Some(GroundTyp::Bool),
+            Typ::Arr(t1, t2) => {
+                if t1.not_any() && t2.not_any() {
+                    None
+                } else {
+                    Some(GroundTyp::Fun)
+                }
+            }
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
