@@ -1,4 +1,4 @@
-use crate::parser::next_metavar;
+use crate::parser::{next_metavar, inc_metavar};
 
 /// Several ground types are presently missing. But, these are all we need
 /// for the non-Grift benchmarks.
@@ -7,6 +7,38 @@ pub enum GroundTyp {
     Int,
     Bool,
     Fun,
+}
+
+impl GroundTyp {
+    pub fn to_typ(&self) -> Typ {
+        match self {
+            GroundTyp::Int => Typ::Int,
+            GroundTyp::Bool => Typ::Bool,
+            _ => panic!("Error when transform {:?} to Typ", self),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub enum MetaVar {
+    Atom(u32),
+    Arr(Box<MetaVar>, Box<MetaVar>)
+}
+
+impl MetaVar {
+    pub fn to_typ(&self) -> Typ {
+        match self {
+            MetaVar::Atom(i) => Typ::Metavar(*i),
+            MetaVar::Arr(i, j) => Typ::Arr(Box::new(i.to_typ()), Box::new(j.to_typ()))
+        }
+    }
+
+    pub fn index(&self) -> u32 {
+        match self {
+            MetaVar::Atom(i) => *i,
+            _ => panic!("Meta::Arr do not have index")
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -49,6 +81,14 @@ pub enum Typ {
 impl Typ {
     pub fn take(&mut self) -> Typ {
         std::mem::replace(self, Typ::Unit)
+    }
+
+    pub fn to_metavar(&self) -> MetaVar {
+        match self {
+            Typ::Metavar(i) => MetaVar::Atom(*i),
+            Typ::Arr(t1, t2) => MetaVar::Arr(Box::new(t1.to_metavar()), Box::new(t2.to_metavar())),
+            t => panic!("{} can not be convert to a MetaVar", t),
+        }
     }
 
     /// Generates a right-associated function type

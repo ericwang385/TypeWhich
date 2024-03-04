@@ -1,5 +1,5 @@
-use crate::parser::{curr_metavar, next_metavar, parse};
-use crate::syntax::GroundTyp;
+use crate::parser::{curr_metavar, inc_metavar, parse};
+use crate::syntax::{GroundTyp, MetaVar};
 
 use super::syntax::{Exp, Typ};
 use super::syntax::Exp::*;
@@ -7,46 +7,53 @@ use im::{HashSet, HashMap};
 use std::boxed::Box;
 use either::Either::{self, Left, Right};
 
-type Env = HashMap<String, Typ>;
-type Hom = HashMap<Typ, (Typ, Typ)>;
+type Env = HashMap<String, MetaVar>;
+type CTyp = Either<MetaVar, GroundTyp>;
+type Hom = HashMap<u32, (u32, u32)>;
 type Ans = HashMap<u32, Typ>;
-type Constraint = HashSet<(Typ, Typ)>;
+type Constraint = HashSet<(CTyp, CTyp)>;
+
+fn next_metavar() -> MetaVar {
+    MetaVar::Atom(inc_metavar())
+}
 
 // Entry Point
 pub fn type_infer(mut exp: Exp, env: &Env) -> Result<Exp, String> {
-    let (_, mut cst) = constraint_gen(&mut exp, env);
-    let n = curr_metavar();
-    let mut ans = (0..n).map(|x| (x, Typ::Metavar(x))).collect::<Ans>();
-    let mut hom = Default::default();
-    constraint_rewrite(&mut cst, &mut hom);
-    constraint_solve(&mut cst, &mut ans, &hom);
-    annotate(&ans, &mut exp, &hom);
+    let (_, mut phi) = constraint_gen(&mut exp, env);
+    let mut psi = Default::default();
+    let mut sigma = Default::default();
+    // let n = curr_metavar();
+    // let mut sigma = (0..n).map(|x| (x, Typ::Metavar(x))).collect::<Ans>();
+    constraint_rewrite(&mut phi, &mut psi);
+    constraint_solve(&mut phi, &mut sigma, &psi);
+    annotate(&sigma, &mut exp, &psi);
     Ok(exp)
 }
 
-pub fn type_check(exp: &Exp) -> Result<Typ, String> {
-    todo!()
-}
+// pub fn type_check(exp: &Exp) -> Result<Typ, String> {
+//     todo!()
+// }
 
-fn constraint_gen(exp: &mut Exp, env: &Env) -> (Typ, Constraint) {
+fn constraint_gen(exp: &mut Exp, env: &Env) -> (MetaVar, Constraint) {
     match exp {
         PrimCoerce(..) => panic!("PrimCoerce should not appear in source"),
         Lit(lit) => {
-            let t1 = lit.typ();
-            outer_coerce(t1, exp, Default::default())
+            let t = lit.typ().to_groundtyp().unwrap();
+            outer_coerce(Right(t), exp, Default::default())
         },
         Var(x) => {
-            let t1 = env.get(x)
+            let t = env.get(x)
                 .unwrap_or_else(|| panic!("unbound identifier {}", x))
                 .clone();
-            outer_coerce(t1, exp, Default::default())
+            outer_coerce(Left(t), exp, Default::default())
         },
-        Fun(f, t1, body) => {
+        Fun(f, t, body) => {
             let mut env = env.clone();
+            let t1 = t.to_metavar();
             env.insert(f.clone(), t1.clone());
             let (t2, phi) = constraint_gen(body, &env);
-            let funt = Typ::Arr(Box::new(t1.clone()), Box::new(t2));
-            outer_coerce(funt, exp, phi)
+            let funt = MetaVar::Arr(Box::new(t1), Box::new(t2));
+            outer_coerce(Left(funt), exp, phi)
         },
         App(e1, e2) => {
             let (t1, phi1) = constraint_gen(e1, &env);
@@ -54,33 +61,35 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (Typ, Constraint) {
             let mut phi = phi1.union(phi2);
             let alpha = next_metavar();
             let beta = next_metavar();
-            let funt = Typ::Arr(Box::new(alpha.clone()), Box::new(beta.clone()));
-            coerce(t1.clone(), funt.clone(), e1);
-            coerce(t2.clone(), alpha.clone(), e2);
-            phi.insert((t1, funt));
-            phi.insert((t2, alpha));
+            let funt = MetaVar::Arr(Box::new(alpha.clone()), Box::new(beta.clone()));
+            coerce(t1.to_typ(), funt.to_typ(), e1);
+            coerce(t2.to_typ(), alpha.to_typ(), e2);
+            phi.insert((Left(t1), Left(funt)));
+            phi.insert((Left(t2), Left(alpha)));
             (beta, phi)
         },
         UnaryOp(op, e) => {
             let (t1, ret) = op.typ();
-            // let t11 = t1.to_groundtyp().unwrap_or_else(|| panic!("UnaryOp with higher-order behavior"));
+            let t11 = t1.to_groundtyp().unwrap_or_else(|| panic!("UnaryOp with higher-order behavior"));
+            let rett = ret.to_groundtyp().unwrap_or_else(|| panic!("UnaryOp with higher-order behavior"));
             let (t2, mut phi) = constraint_gen(e, &env);
-            coerce(t2.clone(), t1.clone(), e);
-            phi.insert((t2, t1));
-            outer_coerce(ret, e, phi)
+            coerce(t2.to_typ(), t1, e);
+            phi.insert((Left(t2), Right(t11)));
+            outer_coerce(Right(rett), e, phi)
         },
         BinaryOp(op, e1, e2) => {
             let (t1, t2, ret) = op.typ();
-            // let t11 = t1.to_groundtyp().unwrap_or_else(|| panic!("BinaryOp with higher-order behavior"));
-            // let t22 = t2.to_groundtyp().unwrap_or_else(|| panic!("BinaryOp with higher-order behavior"));
+            let t11 = t1.to_groundtyp().unwrap_or_else(|| panic!("BinaryOp with higher-order behavior"));
+            let t22 = t2.to_groundtyp().unwrap_or_else(|| panic!("BinaryOp with higher-order behavior"));
+            let rett = ret.to_groundtyp().unwrap_or_else(|| panic!("BinaryOp with higher-order behavior"));
             let (t3, phi1) = constraint_gen(e1, &env);
             let (t4, phi2) = constraint_gen(e2, &env);
             let mut phi = phi1.union(phi2);
-            coerce(t3.clone(), t1.clone(), e1);
-            coerce(t4.clone(), t2.clone(), e2);
-            phi.insert((t3, t1));
-            phi.insert((t4, t2));
-            outer_coerce(ret, exp, phi)
+            coerce(t3.to_typ(), t1, e1);
+            coerce(t4.to_typ(), t2, e2);
+            phi.insert((Left(t3), Right(t11)));
+            phi.insert((Left(t4), Right(t22)));
+            outer_coerce(Right(rett), exp, phi)
         },
         Let(x, e1, e2) => {
             let (t1, phi1) = constraint_gen(e1, &env);
@@ -95,22 +104,30 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (Typ, Constraint) {
             let (t3, phi3) = constraint_gen(e2, &env);
             let mut phi = phi1.union(phi2).union(phi3);
             let alpha = next_metavar();
-            coerce(t1.clone(), Typ::Bool, cond);
-            coerce(t2.clone(), alpha.clone(), e1);
-            coerce(t3.clone(), alpha.clone(), e2);
-            phi.insert((t1, Typ::Bool));
-            phi.insert((alpha.clone(), t2));
-            phi.insert((alpha.clone(), t3));
+            coerce(t1.to_typ(), Typ::Bool, cond);
+            coerce(t2.to_typ(), alpha.to_typ(), e1);
+            coerce(t3.to_typ(), alpha.to_typ(), e2);
+            phi.insert((Left(t1), Right(GroundTyp::Bool)));
+            phi.insert((Left(alpha.clone()), Left(t2)));
+            phi.insert((Left(alpha.clone()), Left(t3)));
             (alpha, phi)
         }
         _ => todo!()
     }
 }
 
-fn outer_coerce(t: Typ, exp: &mut Exp, mut cst: Constraint) -> (Typ, Constraint) {
+fn outer_coerce(t: CTyp, exp: &mut Exp, mut cst: Constraint) -> (MetaVar, Constraint) {
     let alpha = next_metavar();
-    coerce(t.clone(), alpha.clone(), exp);
-    cst.insert((alpha.clone(), t));
+    match t {
+        Left(a) => {
+            coerce(a.to_typ(), alpha.to_typ(), exp);
+            cst.insert((Left(alpha.clone()), Left(a)))
+        },
+        Right(a) => {
+            coerce(a.to_typ(), alpha.to_typ(), exp);
+            cst.insert((Left(alpha.clone()), Right(a)))
+        }
+    };
     (alpha, cst)
 }
 
@@ -118,146 +135,255 @@ fn coerce(t1: Typ, t2: Typ, exp: &mut Exp) {
     *exp = Exp::Coerce(t1, t2, Box::new(exp.take()))
 }
 
-fn constraint_rewrite(cst: &mut Constraint, hom: &mut Hom) {
-    let iterator = cst.clone();
-    let orig_hom = hom.clone();
+fn constraint_rewrite(phi: &mut Constraint, psi: &mut Hom) {
+    let iterator = phi.clone();
+    let orig_hom = psi.clone();
     for (t1, t2) in iterator.iter() {
         match (t1, t2) {
-            // a < b < G => a < G 
-            (Typ::Metavar(_), Typ::Int)
-            | (Typ::Metavar(_), Typ::Bool) => {
-                for (t3, t4) in iterator.iter() {
-                    if t2 == t3 && t1 != t4 {
-                        cst.insert((t3.clone(), t1.clone()));
-                    }
+            (Left(MetaVar::Atom(i)), Left(MetaVar::Atom(j))) => {
+                if psi.contains_key(i) && !psi.contains_key(j) {
+                    // a < b & a = fun & b != fun
+                    let (dom, cod) = (next_metavar(), next_metavar());
+                    let (a1, a2) = psi.get(i).unwrap();
+                    let funt = MetaVar::Arr(Box::new(MetaVar::Atom(*a1)), Box::new(MetaVar::Atom(*a2)));
+                    psi.insert(*j, (dom.index(), cod.index()));
+                    phi.insert((Left(funt), Left(MetaVar::Arr(Box::new(dom), Box::new(cod)))));
+
+                } else if !psi.contains_key(i) && psi.contains_key(j) {
+                    // a < b & a != fun & b = fun
+                    let (dom, cod) = (next_metavar(), next_metavar());
+                    let (b1, b2) = psi.get(j).unwrap();
+                    let funt = MetaVar::Arr(Box::new(MetaVar::Atom(*b1)), Box::new(MetaVar::Atom(*b2)));
+                    psi.insert(*i, (dom.index(), cod.index()));
+                    phi.insert((Left(MetaVar::Arr(Box::new(dom), Box::new(cod))), Left(funt)));
+                } else if psi.contains_key(i) && psi.contains_key(j) {
+                    // a < b & a = fun & b = fun
+                    let (a1, a2) = psi.get(i).unwrap();
+                    let (b1, b2) = psi.get(j).unwrap();
+                    let funta = MetaVar::Arr(Box::new(MetaVar::Atom(*a1)), Box::new(MetaVar::Atom(*a2)));
+                    let funtb = MetaVar::Arr(Box::new(MetaVar::Atom(*b1)), Box::new(MetaVar::Atom(*b2)));
+                    phi.insert((Left(funta), Left(funtb)));
+                    phi.remove(&(t1.clone(), t2.clone()));
                 }
-            }
-            (Typ::Metavar(_), Typ::Metavar(_)) => {
-                if hom.contains_key(t1) && !hom.contains_key(t2) {
-                    // a < b && a = c -> d && b != _ -> _
-                    let alpha = next_metavar();
-                    let beta = next_metavar();
-                    hom.insert(t2.clone(), (alpha.clone(), beta.clone()));
-                    cst.insert((t1.clone(), Typ::Arr(Box::new(alpha), Box::new(beta))));
-                } else if hom.contains_key(t2) && ! hom.contains_key(t1){
-                    // a < b && b = c -> d && a != _ -> _
-                    let alpha = next_metavar();
-                    let beta = next_metavar();
-                    hom.insert(t1.clone(), (alpha.clone(), beta.clone()));
-                    cst.insert((Typ::Arr(Box::new(alpha), Box::new(beta)), t2.clone()));
-                }
-                // a < b < c => a < c
                 for (t3, t4) in iterator.iter() {
-                    if t2 == t3 && t1 != t4 {
-                        cst.insert((t3.clone(), t1.clone()));
+                    match (t3, t4) {
+                        // a < b & b < G => a < G
+                        // a < b & b < c => a < c
+                        (Left(MetaVar::Atom(_)), Right(_))
+                        | (Left(MetaVar::Atom(_)), Left(MetaVar::Atom(_))) => {
+                            if t2 == t3 && t1 != t4 {
+                                phi.insert((t1.clone(), t4.clone()));
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
             // a -> b < c -> d => a < c & b < d
-            (Typ::Arr(t11, t12), Typ::Arr(t21, t22)) => {
-                cst.insert((*t11.clone(), *t21.clone()));
-                cst.insert((*t12.clone(), *t22.clone()));
+            (Left(MetaVar::Arr(t11, t12)), Left(MetaVar::Arr(t21, t22))) => {
+                phi.remove(&(t1.clone(), t2.clone()));
+                phi.insert((Left(*t11.clone()), Left(*t21.clone())));
+                phi.insert((Left(*t12.clone()), Left(*t22.clone())));
             }
             // a < b -> c
-            (Typ::Metavar(_), Typ::Arr(_, _)) => {
-                let (alpha, beta) = match hom.get(t1) {
-                    Some((a, b)) => (a.clone(), b.clone()),
-                    None => {
-                        let a = next_metavar();
-                        let b = next_metavar();
-                        (a, b)
-                    },
-                };
-                cst.insert((Typ::Arr(Box::new(alpha.clone()), Box::new(beta.clone())), t2.clone()));
-                hom.insert(t1.clone(), (alpha, beta));
+            (Left(MetaVar::Atom(i)), Left(MetaVar::Arr(_,_))) => {
+                phi.remove(&(t1.clone(), t2.clone()));
+                if psi.contains_key(i) {
+                    let (dom, cod) = psi.get(i).unwrap();
+                    phi.insert((Left(MetaVar::Arr(Box::new(MetaVar::Atom(*dom)), Box::new(MetaVar::Atom(*cod)))), t2.clone()));
+                } else {
+                    let (dom, cod) = (next_metavar(), next_metavar());
+                    phi.insert((Left(MetaVar::Arr(Box::new(dom.clone()), Box::new(cod.clone()))), t2.clone()));
+                    psi.insert(*i, (dom.index(), cod.index()));
+                }
             }
             // b -> c < a
-            (Typ::Arr(_, _), Typ::Metavar(_)) => {
-                let (alpha, beta) = match hom.get(t2) {
-                    Some((a, b)) => (a.clone(), b.clone()),
-                    None => {
-                        let a = next_metavar();
-                        let b = next_metavar();
-                        (a, b)
-                    },
-                };
-                cst.insert((t1.clone(), Typ::Arr(Box::new(alpha.clone()), Box::new(beta.clone()))));
-                hom.insert(t2.clone(), (alpha, beta));
+            (Left(MetaVar::Arr(_, _)), Left(MetaVar::Atom(j))) => {
+                phi.remove(&(t1.clone(), t2.clone()));
+                if psi.contains_key(j) {
+                    let (dom, cod) = psi.get(j).unwrap();
+                    phi.insert((t1.clone(), Left(MetaVar::Arr(Box::new(MetaVar::Atom(*dom)), Box::new(MetaVar::Atom(*cod))))));
+                } else {
+                    let (dom, cod) = (next_metavar(), next_metavar());
+                    phi.insert((t1.clone(), Left(MetaVar::Arr(Box::new(dom.clone()), Box::new(cod.clone())))));
+                    psi.insert(*j, (dom.index(), cod.index()));
+                }
             }
             _ => {}
         }
     }
-    if !iterator.difference(cst.clone()).is_empty() || !orig_hom.difference(hom.clone()).is_empty() {
-        constraint_rewrite(cst, hom);
+    if !iterator.difference(phi.clone()).is_empty() || !orig_hom.difference(psi.clone()).is_empty() {
+        constraint_rewrite(phi, psi);
     }
 }
 
-fn constraint_solve(cst: &mut Constraint, ans: &mut Ans, hom: &Hom) {
-    let iterator = cst.clone();
-    let orig_ans = ans.clone();
+fn constraint_solve(phi: &mut Constraint, sigma: &mut Ans, psi: &Hom) {
+    // conflict_solve(phi, sigma, psi);
+    println!("Original Constraint{:?} \n", phi);
+    loop {
+        if sigma.len() as u32 == curr_metavar() {
+            return;
+        }
+        // println!("Answer Set: {:?}", sigma);
+        let orig_sigma = sigma.clone();
+        let orig_phi = phi.clone();
+        try_assign(phi, sigma);
+        conflict_solve(phi, sigma, psi);
+        println!("Constraint{:?} \n", phi);
+        println!("orig_sigma{:?}, sigma{:?} \n", orig_sigma, sigma);
+        if orig_sigma.difference(sigma.clone()).is_empty() && orig_phi.difference(phi.clone()).is_empty() {
+            return;
+        }
+    }
+}
+
+fn conflict_solve(phi: &Constraint, sigma: &mut Ans, psi: &Hom) {
+    let iterator = phi.clone();
+    let orig_sigma = sigma.clone();
+    let n = curr_metavar();
     for (t1, t2) in iterator.iter() {
         match (t1, t2) {
             // G < a => a = G
-            (Typ::Int, Typ::Metavar(i))
-            | (Typ::Bool, Typ::Metavar(i)) => {
-                match ans.get(i).unwrap() {
-                    t => {
-                        if t1 != t {
-                            ans.insert(i.clone(), Typ::Any);
-                            check_fun(i, ans, &hom);
+            (Right(a), Left(MetaVar::Atom(i))) => {
+                match sigma.get(i) {
+                    Some(b) => {
+                        if a.to_typ() != b.clone() {
+                            sigma.insert(i.clone(), Typ::Any);
                         }
                     }
-                    Typ::Metavar(i) => {
-                        ans.insert(i.clone(), t1.clone());
+                    None => {
+                        sigma.insert(i.clone(), a.to_typ());
                     }
-                    _ => panic!("Error at first case while solving constraints"),
                 }
             }
             // a < G1 & a < G2 => a = ?      
-            
+            (Left(MetaVar::Atom(_)), Right(_)) => {
+                for (t3, t4) in iterator.iter() {
+                    match (t3, t4) {
+                        (Left(MetaVar::Atom(i)), Right(_)) if t1 == t3 && t2 != t4 => {
+                            sigma.insert(i.clone(), Typ::Any);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            // b = ? & a < b => a = ?
+            (Left(MetaVar::Atom(i)), Left(MetaVar::Atom(j))) => {
+                if sigma.get(j) == Some(&Typ::Any){
+                    sigma.insert(i.clone(), Typ::Any);
+                }
+            }
             _ => {}
         }
     }
-    if !iterator.difference(cst.clone()).is_empty() {
-        constraint_solve(cst, ans, hom);
-    } else if !orig_ans.difference(ans.clone()).is_empty() {
-        constraint_solve(cst, ans, hom);
+    for i in 0..n {
+        match sigma.get(&i) {
+            Some(Typ::Int) 
+            | Some(Typ::Bool) if psi.contains_key(&i)=> {
+                let (dom, cod) = psi.get(&i).unwrap();
+                sigma.insert(i, Typ::Any);
+                sigma.insert(*dom, Typ::Any);
+                sigma.insert(*cod, Typ::Any);
+            }
+            Some(Typ::Arr(t1, t2)) => {
+                let (dom, cod) = psi.get(&i).unwrap();
+                let (t11, t22) = (*t1.clone(), *t2.clone());
+                match (sigma.get(dom), sigma.get(cod)) {
+                    (Some(t3), Some(t4)) => {
+                        if t11 != t3.clone() && t22 != t4.clone() {
+                            sigma.insert(i, Typ::Arr(Box::new(Typ::Any), Box::new(Typ::Any)));
+                            sigma.insert(*dom, Typ::Any);
+                            sigma.insert(*cod, Typ::Any);
+                        } else if t11 != t3.clone() && t22 == t4.clone() {
+                            sigma.insert(i, Typ::Arr(Box::new(Typ::Any), t2.clone()));
+                            sigma.insert(*dom, Typ::Any);
+                        } else if t11 == t3.clone() && t22 != t4.clone() {
+                            sigma.insert(i, Typ::Arr(t1.clone(), Box::new(Typ::Any)));
+                            sigma.insert(*cod, Typ::Any);
+                        }
+                    }
+                    (Some(t3), None) => {
+                        if t11 != t3.clone() {
+                            sigma.insert(i, Typ::Arr(Box::new(Typ::Any), t2.clone()));
+                            sigma.insert(*dom, Typ::Any);
+                        }
+                        sigma.insert(*cod, t22);
+                    }
+                    (None, Some(t4)) => {
+                        if t22 != t4.clone() {
+                            sigma.insert(i, Typ::Arr(t1.clone(), Box::new(Typ::Any)));
+                            sigma.insert(*cod, Typ::Any);
+                        }
+                        sigma.insert(*dom, t11);
+                    }
+                    (None, None) => {
+                        sigma.insert(*cod, t22);
+                        sigma.insert(*dom, t11);
+                    }
+                }
+            }
+            None if psi.contains_key(&i) => {
+                let (dom, cod) = psi.get(&i).unwrap();
+                match (sigma.get(dom), sigma.get(cod)) {
+                    (Some(a), Some(b)) => {
+                        sigma.insert(i, Typ::Arr(Box::new(a.clone()), 
+                                            Box::new(b.clone())));
+                    }
+                    // (Some(a), None) => {
+                    //     sigma.insert(i, Typ::Arr((), ()))
+                    // }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+    if !orig_sigma.difference(sigma.clone()).is_empty() {
+        conflict_solve(phi, sigma, psi);
     }
 }
 
-fn check_fun(i: &u32, ans: &mut Ans, hom: &Hom) {
-    match hom.get(&Typ::Metavar(*i)) {
-        Some((Typ::Metavar(j), Typ::Metavar(k))) => {
-            ans.insert(j.clone(), Typ::Any);
-            ans.insert(k.clone(), Typ::Any);
+fn try_assign(phi: &mut Constraint, sigma: &mut Ans) {
+    // let iterator = phi.clone();
+    for (t1, t2) in phi.clone().iter() {
+        match (t1, t2) {
+            (Left(MetaVar::Atom(i)), Right(t)) if sigma.get(&i) == None => {
+                sigma.insert(*i, t.to_typ());
+            }
+            _ => {}
         }
-        // None => {}
-        _ => {}
+    }
+    for i in 0..curr_metavar() {
+        match sigma.get(&i) {
+            Some(t @ Typ::Int) 
+            | Some(t @ Typ::Bool) => substitute(i, t.to_groundtyp().unwrap(), phi),
+            _ => {}
+        };
+    }
+}
+
+fn substitute(i: u32, t: GroundTyp, phi: &mut Constraint) {
+    let iterator = phi.clone();
+    for (t1, t2) in iterator.iter() {
+        if t1 == &Left(MetaVar::Atom(i)) {
+            phi.remove(&(t1.clone(), t2.clone()));
+            phi.insert((Right(t.clone()), t2.clone()));
+        } else if t2 == &Left(MetaVar::Atom(i)) {
+            phi.remove(&(t1.clone(), t2.clone()));
+            phi.insert((t2.clone(), Right(t.clone())));
+        }
     }
 }
 
 fn annotate_typ(ans: &Ans, t: &mut Typ, hom: &Hom) {
     match t {
         Typ::Metavar(i) => {
-            match ans.get(i) {
-                Some(s) => *t = match s {
-                    Left(Typ::Metavar(_)) => Typ::Any,
-                    Right(GroundTyp::Fun) => {
-                        match hom.get(&Typ::Metavar(*i)) {
-                            Some((t1, t2)) => {
-                                annotate_typ(ans, &mut t1.clone(), hom);
-                                annotate_typ(ans, &mut t2.clone(), hom);
-                                Typ::Arr(Box::new(t1.clone()), Box::new(t2.clone()))
-                            }
-                            None => {Typ::Arr(Box::new(Typ::Any), Box::new(Typ::Any))}
-                        }
-                        
-                    }
-                    Right(GroundTyp::Bool) => Typ::Bool,
-                    Right(GroundTyp::Int) => Typ::Int,
-                    _ => {panic!("Error when annotate type")}
+            *t = match ans.get(i) {
+                Some(s) => match s {
+                    Typ::Metavar(_) => panic!("Type variable in answer set at {}", i),
+                    _ => s.clone(),
                 },
-                None => ()
+                None => Typ::Any,
             }
         }
         Typ::Arr(t1, t2) | Typ::Pair(t1, t2) => {
@@ -271,18 +397,18 @@ fn annotate_typ(ans: &Ans, t: &mut Typ, hom: &Hom) {
     }
 }
 
-fn annotate(ans: &Ans, exp: &mut Exp, hom: &Hom) {
+fn annotate(sigma: &Ans, exp: &mut Exp, psi: &Hom) {
     match &mut *exp {
         PrimCoerce(..) => panic!("PrimCoerce should not appear in source"),
         Lit(..) | Var(..) => {}
         Exp::Fun(_, t, e) | Exp::Fix(_, t, e) | Exp::Ann(e, t) => {
-            annotate_typ(ans, t, hom);
-            annotate(ans, e, hom);
+            annotate_typ(sigma, t, psi);
+            annotate(sigma, e, psi);
         }
         Exp::Coerce(t1, t2, e) => {
-            annotate(ans, e, hom);
-            annotate_typ(ans, t1, hom);
-            annotate_typ(ans, t2, hom);
+            annotate(sigma, e, psi);
+            annotate_typ(sigma, t1, psi);
+            annotate_typ(sigma, t2, psi);
             if t1 == t2 {
                 *exp = e.take();
             }
@@ -291,34 +417,33 @@ fn annotate(ans: &Ans, exp: &mut Exp, hom: &Hom) {
         | Exp::Let(_, e1, e2)
         | Exp::BinaryOp(_, e1, e2)
         | Exp::AddOverload(e1, e2) => {
-            annotate(ans, e1, hom);
-            annotate(ans, e2, hom);
+            annotate(sigma, e1, psi);
+            annotate(sigma, e2, psi);
         }
         _ => {}
     }
 }
 
-#[cfg(test)]
+// #[cfg(test)]
 mod test {
-    use either::Either::Left;
     use crate::syntax::{Exp, Typ};
     use crate::parser::{curr_metavar, parse};
-    use crate::type_migrate::{annotate, constraint_gen, constraint_rewrite, constraint_solve, Ans};
+    use crate::type_migrate::{annotate, constraint_gen, constraint_rewrite, constraint_solve};
 
     fn test_migrate(orig: &str) -> Exp {
         let mut exp = parse(orig).unwrap();
         exp.fresh_types();
-        let (_, mut cst) = constraint_gen(&mut exp, &Default::default());
-        let n = curr_metavar();
-        let mut ans = (0..n).map(|x| (x, Left(Typ::Metavar(x)))).collect::<Ans>();
-        let hom = Default::default();
-        constraint_rewrite(&mut cst);
-        println!("Constraint:\n{:?}", cst);
-        constraint_solve(&mut cst, &mut ans, &hom);
-        println!("Answer Set:\n{:?}", ans);
-        println!("Higher-Order Set:\n{:?}", hom);
-        println!("Before Annotation:\n{:?}\n", exp);
-        annotate(&ans, &mut exp, &hom);
+        let (_, mut phi) = constraint_gen(&mut exp, &Default::default());
+        // let n = curr_metavar();
+        let mut sigma = Default::default();
+        let mut psi = Default::default();
+        constraint_rewrite(&mut phi, &mut psi);
+        constraint_solve(&mut phi, &mut sigma, &psi);
+        // println!("Constraint:\n{:?}", phi);
+        // println!("Answer Set:\n{:?}", sigma);
+        // println!("Higher-Order Set:\n{:?}", psi);
+        // println!("Before Annotation:\n{:?}\n", exp);
+        annotate(&sigma, &mut exp, &psi);
         println!("After Annotation Pretty:\n{}\n", exp);
         exp
     }

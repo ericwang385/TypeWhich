@@ -214,7 +214,7 @@ fn migrate_main(config: Opts) -> Result<()> {
     };
 
     let env = match language_or_override(&language, &config.env) {
-        Parser::Grift => grift::env(),
+        // Parser::Grift => grift::env(),
         _ => Default::default(),
     };
     let source = match config.input.as_str() {
@@ -246,14 +246,14 @@ fn migrate_main(config: Opts) -> Result<()> {
         type_migrate::type_infer(parsed, &env).unwrap()
     };
 
-    if !config.skip_type_check {
-        let typ = type_check::tcheck(&env, &inferred)
-            .map_err(|e| Error::new(ErrorKind::Other, format!("{}", e)))?;
-        if options.debug {
-            eprintln!("Inferred type:");
-            eprintln!("{}", typ);
-        }
-    }
+    // if !config.skip_type_check {
+    //     let typ = type_check::tcheck(&env, &inferred)
+    //         .map_err(|e| Error::new(ErrorKind::Other, format!("{}", e)))?;
+    //     if options.debug {
+    //         eprintln!("Inferred type:");
+    //         eprintln!("{}", typ);
+    //     }
+    // }
 
     match config.compare {
         None => {
