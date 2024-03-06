@@ -20,12 +20,11 @@ fn next_metavar() -> MetaVar {
 // Entry Point
 pub fn type_infer(mut exp: Exp, env: &Env) -> Result<Exp, String> {
     let (_, mut phi) = constraint_gen(&mut exp, env);
-    let mut psi = Default::default();
     let mut sigma = Default::default();
-    // let n = curr_metavar();
-    // let mut sigma = (0..n).map(|x| (x, Typ::Metavar(x))).collect::<Ans>();
+    let mut psi = Default::default();
     constraint_rewrite(&mut phi, &mut psi);
     constraint_solve(&mut phi, &mut sigma, &psi);
+    fun_assign(&mut sigma, &psi);
     annotate(&sigma, &mut exp, &psi);
     Ok(exp)
 }
@@ -150,6 +149,7 @@ fn constraint_rewrite(phi: &mut Constraint, psi: &mut Hom) {
                     phi.insert((Left(funt), Left(MetaVar::Arr(Box::new(dom), Box::new(cod)))));
 
                 } else if !psi.contains_key(i) && psi.contains_key(j) {
+                // if !psi.contains_key(i) && psi.contains_key(j) {
                     // a < b & a != fun & b = fun
                     let (dom, cod) = (next_metavar(), next_metavar());
                     let (b1, b2) = psi.get(j).unwrap();
@@ -157,13 +157,14 @@ fn constraint_rewrite(phi: &mut Constraint, psi: &mut Hom) {
                     psi.insert(*i, (dom.index(), cod.index()));
                     phi.insert((Left(MetaVar::Arr(Box::new(dom), Box::new(cod))), Left(funt)));
                 } else if psi.contains_key(i) && psi.contains_key(j) {
+                // if psi.contains_key(i) && psi.contains_key(j) {
                     // a < b & a = fun & b = fun
                     let (a1, a2) = psi.get(i).unwrap();
                     let (b1, b2) = psi.get(j).unwrap();
                     let funta = MetaVar::Arr(Box::new(MetaVar::Atom(*a1)), Box::new(MetaVar::Atom(*a2)));
                     let funtb = MetaVar::Arr(Box::new(MetaVar::Atom(*b1)), Box::new(MetaVar::Atom(*b2)));
                     phi.insert((Left(funta), Left(funtb)));
-                    phi.remove(&(t1.clone(), t2.clone()));
+                    // phi.remove(&(t1.clone(), t2.clone()));
                 }
                 for (t3, t4) in iterator.iter() {
                     match (t3, t4) {
@@ -181,13 +182,13 @@ fn constraint_rewrite(phi: &mut Constraint, psi: &mut Hom) {
             }
             // a -> b < c -> d => a < c & b < d
             (Left(MetaVar::Arr(t11, t12)), Left(MetaVar::Arr(t21, t22))) => {
-                phi.remove(&(t1.clone(), t2.clone()));
+                // phi.remove(&(t1.clone(), t2.clone()));
                 phi.insert((Left(*t11.clone()), Left(*t21.clone())));
                 phi.insert((Left(*t12.clone()), Left(*t22.clone())));
             }
             // a < b -> c
             (Left(MetaVar::Atom(i)), Left(MetaVar::Arr(_,_))) => {
-                phi.remove(&(t1.clone(), t2.clone()));
+                // phi.remove(&(t1.clone(), t2.clone()));
                 if psi.contains_key(i) {
                     let (dom, cod) = psi.get(i).unwrap();
                     phi.insert((Left(MetaVar::Arr(Box::new(MetaVar::Atom(*dom)), Box::new(MetaVar::Atom(*cod)))), t2.clone()));
@@ -199,7 +200,7 @@ fn constraint_rewrite(phi: &mut Constraint, psi: &mut Hom) {
             }
             // b -> c < a
             (Left(MetaVar::Arr(_, _)), Left(MetaVar::Atom(j))) => {
-                phi.remove(&(t1.clone(), t2.clone()));
+                // phi.remove(&(t1.clone(), t2.clone()));
                 if psi.contains_key(j) {
                     let (dom, cod) = psi.get(j).unwrap();
                     phi.insert((t1.clone(), Left(MetaVar::Arr(Box::new(MetaVar::Atom(*dom)), Box::new(MetaVar::Atom(*cod))))));
@@ -212,35 +213,49 @@ fn constraint_rewrite(phi: &mut Constraint, psi: &mut Hom) {
             _ => {}
         }
     }
-    if !iterator.difference(phi.clone()).is_empty() || !orig_hom.difference(psi.clone()).is_empty() {
+    let phi_diff = iterator.difference(phi.clone());
+    let psi_diff = orig_hom.difference(psi.clone());
+    
+    if !phi_diff.is_empty() || !psi_diff.is_empty() {
         constraint_rewrite(phi, psi);
     }
+
 }
 
 fn constraint_solve(phi: &mut Constraint, sigma: &mut Ans, psi: &Hom) {
-    // conflict_solve(phi, sigma, psi);
-    println!("Original Constraint{:?} \n", phi);
     loop {
         if sigma.len() as u32 == curr_metavar() {
             return;
         }
-        // println!("Answer Set: {:?}", sigma);
         let orig_sigma = sigma.clone();
         let orig_phi = phi.clone();
         try_assign(phi, sigma);
         conflict_solve(phi, sigma, psi);
-        println!("Constraint{:?} \n", phi);
-        println!("orig_sigma{:?}, sigma{:?} \n", orig_sigma, sigma);
+        // println!("Constraint: {:?}", phi);
+        // println!("Answer Set:{:?}", sigma);
         if orig_sigma.difference(sigma.clone()).is_empty() && orig_phi.difference(phi.clone()).is_empty() {
             return;
         }
     }
 }
 
+fn fun_assign(sigma: &mut Ans, psi: &Hom) {
+    let n = curr_metavar() + 1;
+    for i in 0..n {
+        match sigma.get(&i) {
+            None if psi.contains_key(&i) => {
+                let (dom, cod) = psi.get(&i).unwrap();
+                sigma.insert(i, Typ::Arr(Box::new(sigma.get(dom).unwrap_or(&Typ::Any).clone()), 
+                Box::new(sigma.get(cod).unwrap_or(&Typ::Any).clone())));
+            }
+            _ => {}
+        }
+    }
+}
 fn conflict_solve(phi: &Constraint, sigma: &mut Ans, psi: &Hom) {
     let iterator = phi.clone();
     let orig_sigma = sigma.clone();
-    let n = curr_metavar();
+    let n = curr_metavar() + 1;
     for (t1, t2) in iterator.iter() {
         match (t1, t2) {
             // G < a => a = G
@@ -344,21 +359,22 @@ fn conflict_solve(phi: &Constraint, sigma: &mut Ans, psi: &Hom) {
 }
 
 fn try_assign(phi: &mut Constraint, sigma: &mut Ans) {
-    // let iterator = phi.clone();
-    for (t1, t2) in phi.clone().iter() {
+    let iterator = phi.clone();
+    let n = curr_metavar() + 1;
+    for i in 0..n {
+        match sigma.get(&i) {
+            Some(t @ Typ::Int) 
+            | Some(t @ Typ::Bool) => substitute(i, t.to_groundtyp().unwrap(), phi),
+            _ => {}
+        };
+    }
+    for (t1, t2) in iterator.iter() {
         match (t1, t2) {
             (Left(MetaVar::Atom(i)), Right(t)) if sigma.get(&i) == None => {
                 sigma.insert(*i, t.to_typ());
             }
             _ => {}
         }
-    }
-    for i in 0..curr_metavar() {
-        match sigma.get(&i) {
-            Some(t @ Typ::Int) 
-            | Some(t @ Typ::Bool) => substitute(i, t.to_groundtyp().unwrap(), phi),
-            _ => {}
-        };
     }
 }
 
@@ -370,7 +386,7 @@ fn substitute(i: u32, t: GroundTyp, phi: &mut Constraint) {
             phi.insert((Right(t.clone()), t2.clone()));
         } else if t2 == &Left(MetaVar::Atom(i)) {
             phi.remove(&(t1.clone(), t2.clone()));
-            phi.insert((t2.clone(), Right(t.clone())));
+            phi.insert((t1.clone(), Right(t.clone())));
         }
     }
 }
@@ -426,9 +442,9 @@ fn annotate(sigma: &Ans, exp: &mut Exp, psi: &Hom) {
 
 // #[cfg(test)]
 mod test {
-    use crate::syntax::{Exp, Typ};
-    use crate::parser::{curr_metavar, parse};
-    use crate::type_migrate::{annotate, constraint_gen, constraint_rewrite, constraint_solve};
+    use crate::syntax::{Exp};
+    use crate::parser::{parse};
+    use crate::type_migrate::{annotate, constraint_gen, constraint_rewrite, constraint_solve, fun_assign};
 
     fn test_migrate(orig: &str) -> Exp {
         let mut exp = parse(orig).unwrap();
@@ -437,15 +453,24 @@ mod test {
         // let n = curr_metavar();
         let mut sigma = Default::default();
         let mut psi = Default::default();
+        // println!("Before rewrite: {:?}", phi);
+        // println!("Expression: {:?}", exp);
         constraint_rewrite(&mut phi, &mut psi);
+        // println!("After rewrite: {:?}", phi);
         constraint_solve(&mut phi, &mut sigma, &psi);
+        fun_assign(&mut sigma, &psi);
         // println!("Constraint:\n{:?}", phi);
-        // println!("Answer Set:\n{:?}", sigma);
-        // println!("Higher-Order Set:\n{:?}", psi);
-        // println!("Before Annotation:\n{:?}\n", exp);
+        println!("Answer Set:\n{:?}", sigma);
+        println!("Higher-Order Set:\n{:?}", psi);
+        println!("Before Annotation:\n{:?}\n", exp);
         annotate(&sigma, &mut exp, &psi);
         println!("After Annotation Pretty:\n{}\n", exp);
         exp
+    }
+
+    #[test]
+    fn bool_add() {
+        test_migrate("true + false");
     }
 
     #[test]
@@ -454,7 +479,7 @@ mod test {
     }
 
     #[test]
-    fn bool_add() {
+    fn bool_app() {
         test_migrate("(fun x . x + 1) true");
     }
 
@@ -464,7 +489,22 @@ mod test {
     }
 
     #[test]
+    fn y_combinator() {
+        test_migrate("(fun x . x x) 5");
+    }
+
+    #[test]
     fn rank2_poly() {
         test_migrate("(fun i.(fun a. (i true)) (i 5) ) (fun x.x)");
+    }
+
+    #[test]
+    fn unreachable() {
+        test_migrate("(fun b . 
+            b (fun c . 
+                 ((fun x . x x) 5) 5) 
+              (fun d . 0)) 
+            (fun t . fun f . f)
+          ");
     }
 }

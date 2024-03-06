@@ -280,6 +280,14 @@ fn migrate_main(config: Opts) -> Result<()> {
     }
 }
 
+#[cfg(text)]
+mod test {
+    #[test]
+    fn rank2_poly() {
+        test_migrate("(fun i.(fun a. (i true)) (i 5) ) (fun x.x)");
+    }
+}
+
 // #[cfg(test)]
 // mod tests_631 {
 //     use super::parser::parse;
