@@ -1,4 +1,4 @@
-use crate::parser::{next_metavar, inc_metavar};
+use crate::parser::{next_metavar};
 
 /// Several ground types are presently missing. But, these are all we need
 /// for the non-Grift benchmarks.
@@ -22,22 +22,34 @@ impl GroundTyp {
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum MetaVar {
     Atom(u32),
-    Arr(Box<MetaVar>, Box<MetaVar>)
+    Arr(Box<MetaVar>, Box<MetaVar>),
+    Dom(Box<MetaVar>),
+    Cod(Box<MetaVar>)
 }
 
 impl MetaVar {
     pub fn to_typ(&self) -> Typ {
         match self {
             MetaVar::Atom(i) => Typ::Metavar(*i),
-            MetaVar::Arr(i, j) => Typ::Arr(Box::new(i.to_typ()), Box::new(j.to_typ()))
+            MetaVar::Arr(i, j) => Typ::Arr(Box::new(i.to_typ()), Box::new(j.to_typ())),
+            MetaVar::Dom(t) => t.to_typ(),
+            MetaVar::Cod(t) => t.to_typ(),
         }
     }
 
-    pub fn index(&self) -> u32 {
+    pub fn is_arr(&self) -> bool {
         match self {
-            MetaVar::Atom(i) => *i,
-            _ => panic!("Meta::Arr do not have index")
+            MetaVar::Arr(_,_) => true,
+            _ => false
         }
+    }
+
+    pub fn dom(&self) -> MetaVar {
+        MetaVar::Dom(Box::new(self.clone()))
+    }
+
+    pub fn cod(&self) -> MetaVar {
+        MetaVar::Cod(Box::new(self.clone()))
     }
 }
 

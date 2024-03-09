@@ -132,7 +132,7 @@ fn eval(code: String, num_stars: Option<&mut usize>) -> Option<bool> {
 
 
 fn check_if_compatible(migrated: &str, expected: &Option<String>) -> bool {
-    println!("{:?}", migrated);
+    // println!("{:?}", migrated);
     match expected {
         None => false,
         Some(expected) => {
