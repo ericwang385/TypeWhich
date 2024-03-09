@@ -3,7 +3,7 @@ use super::syntax::*;
 // it does end up sometimes being useful to print metavariables in programs,
 // though usually it's just noise
 const PRINT_METAVARS: bool = false;
-const PRINT_COERCIONS: bool = false;
+const PRINT_COERCIONS: bool = true;
 
 // Copied from jankscripten
 pub trait Pretty {

@@ -291,6 +291,10 @@ fn conflict_solve(phi: &Constraint, sigma: &mut Ans, psi: &Hom) {
                     sigma.insert(t.cod(), Typ::Any);
                 }
             }
+            None if sigma.contains_key(&t.dom()) && sigma.contains_key(&t.cod()) => {
+                sigma.insert(t.clone(), Typ::Arr(Box::new(sigma.get(&t.dom()).unwrap().clone()),
+                                Box::new(sigma.get(&t.cod()).unwrap().clone())));
+            }
             _ => {}
         }
     }

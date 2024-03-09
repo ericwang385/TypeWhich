@@ -132,7 +132,6 @@ fn eval(code: String, num_stars: Option<&mut usize>) -> Option<bool> {
 
 
 fn check_if_compatible(migrated: &str, expected: &Option<String>) -> bool {
-    // println!("{:?}", migrated);
     match expected {
         None => false,
         Some(expected) => {
@@ -178,7 +177,7 @@ fn benchmark_one(tool: &MigrationTool, benchmark: &mut Benchmark) {
         .unwrap();
 
     // Get a pointer to the outcome where we will store the result.
-    let mut outcome = get_outcome(&tool.title, &mut benchmark.results);
+    let outcome = get_outcome(&tool.title, &mut benchmark.results);
 
     // Timeout or error from the migration tool.
     if migrate_ok == false {
@@ -208,6 +207,7 @@ fn benchmark_one(tool: &MigrationTool, benchmark: &mut Benchmark) {
     // Flag that determines if the result of migration runs without error. Also, store the number of
     // stars in the result of migration in outcome.stars_after_migration.
     let mut stars_after_migration = 0;
+    eprintln!("{}", tool_stdout);
     let migrated_runs_ok = eval(tool_stdout.clone(), Some(&mut stars_after_migration));
 
     // Check if the result of migration is less precise than what is known to be a maximally precise

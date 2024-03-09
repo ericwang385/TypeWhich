@@ -184,13 +184,14 @@ impl Typ {
         match self {
             Typ::Int => Some(GroundTyp::Int),
             Typ::Bool => Some(GroundTyp::Bool),
-            Typ::Arr(t1, t2) => {
-                if t1.not_any() && t2.not_any() {
-                    None
-                } else {
-                    Some(GroundTyp::Fun)
-                }
-            }
+            // Typ::Arr(t1, t2) => {
+            //     // if t1.not_any() && t2.not_any() {
+            //     //     None
+            //     // } else {
+            //     //     Some(GroundTyp::Fun)
+            //     // }
+            //     panic!("Flag")
+            // }
             _ => None,
         }
     }
