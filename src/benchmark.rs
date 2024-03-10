@@ -118,6 +118,7 @@ fn get_outcome<'a>(
 // False means a coercion error occurred. Anything else causes a panic.
 // Store the number of stores in num_stars, if provided.
 fn eval(code: String, num_stars: Option<&mut usize>) -> Option<bool> {
+    // eprintln!("{}", code);
     match super::parser::parse(code) {
         Ok(mut ast) => {
             if let Some(num_stars) = num_stars {
@@ -126,7 +127,10 @@ fn eval(code: String, num_stars: Option<&mut usize>) -> Option<bool> {
             super::insert_coercions::insert_coercions(&mut ast).expect("coercion insertion failed");
             Some(super::eval::eval(ast).is_ok())
         }
-        Err(_messages) => None,
+        Err(_messages) => {
+            eprintln!("{}", _messages);
+            None
+    },
     }
 }
 
@@ -207,7 +211,7 @@ fn benchmark_one(tool: &MigrationTool, benchmark: &mut Benchmark) {
     // Flag that determines if the result of migration runs without error. Also, store the number of
     // stars in the result of migration in outcome.stars_after_migration.
     let mut stars_after_migration = 0;
-    eprintln!("{}", tool_stdout);
+    // eprintln!("{}", tool_stdout);
     let migrated_runs_ok = eval(tool_stdout.clone(), Some(&mut stars_after_migration));
 
     // Check if the result of migration is less precise than what is known to be a maximally precise

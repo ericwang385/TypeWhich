@@ -3,7 +3,7 @@ use super::syntax::*;
 // it does end up sometimes being useful to print metavariables in programs,
 // though usually it's just noise
 const PRINT_METAVARS: bool = false;
-const PRINT_COERCIONS: bool = true;
+const PRINT_COERCIONS: bool = false;
 
 // Copied from jankscripten
 pub trait Pretty {
@@ -368,6 +368,10 @@ impl Pretty for Exp {
             Exp::Coerce(_, Typ::Any, e) if e.is_atom() => {
                 pp.concat(vec![pp.text("("), e.pretty(pp), pp.text(" : any)")])
             }
+            // Exp::Coerce(_, to, e) 
+            // if e.is_fun_exp() && to.has_any() => {
+            //     pp.concat(vec![pp.text("("), e.pretty(pp), pp.text(" : "), to.pretty(pp), pp.text(")")])
+            // }
             Exp::Coerce(from, to, e) if PRINT_COERCIONS => pp.concat(vec![
                 pp.text("coerce("),
                 from.pretty(pp),

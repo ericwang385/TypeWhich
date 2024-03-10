@@ -68,3 +68,17 @@ pub fn parse(input: impl AsRef<str>) -> Result<Exp, String> {
         Some(Err(_)) | None => Err(errors),
     }
 }
+
+#[cfg(test)]
+mod parser_test {
+    use super::parse;
+
+    #[test]
+    fn parse_coerce() {
+        let _ = parse("
+        coerce((any -> int) -> int, (int -> int) -> int) 
+        coerce((bool -> int) -> int, (any -> int) -> int) 
+        fun f:bool -> int. f true 
+        (fun x:int. x + 100)");
+    }
+}

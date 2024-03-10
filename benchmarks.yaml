@@ -15,7 +15,7 @@ tools:
   #   command: [ "./bin/TypeWhich", "migrate", "--precise" ]
 
 benchmarks:
-  # - file: adversarial/01-farg-mismatch.gtlc
+  - file: adversarial/01-farg-mismatch.gtlc
   - file: adversarial/02-rank2-poly-id.gtlc
     # Improved i:any to i:any -> any. But, i is always applied, so this is
     # compatible.
@@ -50,7 +50,7 @@ benchmarks:
   - file: adversarial/07-double-f.gtlc
     context: |
       (HOLE) (fun x . fun y . y)
-  # - file: adversarial/08-outflows.gtlc
+  - file: adversarial/08-outflows.gtlc
   - file: adversarial/09-precision-relation.gtlc
     # f receives both true and 5, thus it must receive any as its argument.
     # However, the only value of f is (fun x . 5), so it returns an int.

@@ -407,6 +407,7 @@ mod test {
         println!("Higher-Order Set:\n{:?}", psi);
         println!("Before Annotation:\n{:?}\n", exp);
         annotate(&sigma, &mut exp, &psi);
+        println!("After Annotation \n {:?} \n", exp);
         println!("After Annotation Pretty:\n{}\n", exp);
         exp
     }

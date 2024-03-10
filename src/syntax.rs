@@ -103,6 +103,14 @@ impl Typ {
         }
     }
 
+    pub fn has_any(&self) -> bool {
+        match self {
+            Typ::Any => true,
+            Typ::Arr(t1, t2) => t1.has_any() || t2.has_any(),
+            _ => false
+        }
+    }
+
     /// Generates a right-associated function type
     ///
     /// `typs` must not be empty
