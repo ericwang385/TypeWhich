@@ -806,10 +806,11 @@ impl Exp {
         )
     }
     pub fn is_fun_exp(&self) -> bool {
-        matches!(
-            self,
-            Exp::Fun(..) | Exp::Fix(..) | Exp::If(..) | Exp::Let(..) | Exp::Cons(..)
-        )
+        match self {
+            Exp::Fun(..) | Exp::Fix(..) | Exp::If(..) | Exp::Let(..) | Exp::Cons(..) => true,
+            Exp::Coerce(_,_, e) => e.is_fun_exp(),
+            _ => false,
+        }
     }
     pub fn is_add_or_looser(&self) -> bool {
         match self {

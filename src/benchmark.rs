@@ -118,13 +118,14 @@ fn get_outcome<'a>(
 // False means a coercion error occurred. Anything else causes a panic.
 // Store the number of stores in num_stars, if provided.
 fn eval(code: String, num_stars: Option<&mut usize>) -> Option<bool> {
-    // eprintln!("{}", code);
     match super::parser::parse(code) {
         Ok(mut ast) => {
             if let Some(num_stars) = num_stars {
                 *num_stars = count_stars(&ast);
             }
+            // eprintln!("Ast: {:?}", ast);
             super::insert_coercions::insert_coercions(&mut ast).expect("coercion insertion failed");
+            // eprintln!("Ast with coercion: {}",ast);
             Some(super::eval::eval(ast).is_ok())
         }
         Err(_messages) => {
@@ -208,12 +209,13 @@ fn benchmark_one(tool: &MigrationTool, benchmark: &mut Benchmark) {
     // Flag that determines if the original program runs without error. Also, store the number of
     // stars in the original program in benchmark.num_stars.
     let original_runs_ok = eval(original_program.clone(), Some(&mut benchmark.num_stars));
+    // let original_runs_ok = Some(false);
     // Flag that determines if the result of migration runs without error. Also, store the number of
     // stars in the result of migration in outcome.stars_after_migration.
     let mut stars_after_migration = 0;
-    // eprintln!("{}", tool_stdout);
+    // eprintln!("{:?}", tool_stdout);
     let migrated_runs_ok = eval(tool_stdout.clone(), Some(&mut stars_after_migration));
-
+    // eprintln!("{:?}",(original_runs_ok, migrated_runs_ok));
     // Check if the result of migration is less precise than what is known to be a maximally precise
     // version of the original program.
     let result_is_known_compatible = check_if_compatible(&tool_stdout, &benchmark.assert_compatible);

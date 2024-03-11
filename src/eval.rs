@@ -51,6 +51,7 @@ type EvalResult<'a> = Result<Val<'a>, Error>;
 
 impl Eval {
     fn eval_k<'a>(&'a self, k: &Coerce, v: Val<'a>) -> EvalResult<'a> {
+        // eprintln!("{:?}", k);
         match k {
             Coerce::Doomed => Err(Error::Coercion("doomed".to_string())),
             Coerce::Id => Ok(v),
@@ -112,7 +113,10 @@ impl Eval {
                 let v = self.eval(env, e)?;
                 self.eval_k(&k, v)
             }
-            Exp::PrimCoerce(k, e) => self.eval_k(k, self.eval(env, e)?),
+            Exp::PrimCoerce(k, e) => {
+                // eprintln!("{:?}",k);
+                self.eval_k(k, self.eval(env, e)?)
+            },
             Exp::BinaryOp(BinOp::IntAdd, e1, e2) => {
                 let v1 = self.eval(env.clone(), e1)?;
                 let v2 = self.eval(env.clone(), e2)?;
@@ -134,7 +138,9 @@ impl Eval {
 
 /// Assumes that the expression has coercions inserted.
 pub fn eval(exp: Exp) -> Result<Answer, Error> {
+    // eprintln!("{:?}\n", exp);
     let eval = Eval {};
     let v = eval.eval(Env::new(), &exp)?;
+    // eprintln!("{:?}", v);
     return Ok(v.to_answer());
 }

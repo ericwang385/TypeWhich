@@ -5,4 +5,4 @@ tools:
     command: [ "./bin/TypeWhich", "migrate" ]
 
 benchmarks:
-  - file: adversarial/01-farg-mismatch.gtlc
+  - file: adversarial/08-outflows.gtlc

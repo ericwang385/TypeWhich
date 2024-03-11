@@ -438,6 +438,10 @@ mod test {
     }
 
     #[test]
+    fn precision() {
+       test_migrate("(fun f. f true + (fun g.g 5) f) (fun x.5)");
+    }
+    #[test]
     fn rank2_poly() {
         test_migrate("(fun i.(fun a. (i true)) (i 5) ) (fun x.x)");
     }
