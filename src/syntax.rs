@@ -103,14 +103,6 @@ impl Typ {
         }
     }
 
-    pub fn has_any(&self) -> bool {
-        match self {
-            Typ::Any => true,
-            Typ::Arr(t1, t2) => t1.has_any() || t2.has_any(),
-            _ => false
-        }
-    }
-
     /// Generates a right-associated function type
     ///
     /// `typs` must not be empty
@@ -155,6 +147,10 @@ impl Typ {
     }
     pub fn is_metavar(&self) -> bool {
         matches!(self, Typ::Metavar(..))
+    }
+
+    pub fn is_ground(&self) -> bool {
+        self.to_groundtyp() != None
     }
 
     pub fn not_any(&self) -> bool {

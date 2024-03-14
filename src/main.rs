@@ -9,6 +9,8 @@ mod pretty;
 mod syntax;
 mod type_check;
 mod type_migrate;
+mod constraint_gen;
+mod constraint_solve;
 
 use clap::Clap;
 use std::io::*;
