@@ -1,8 +1,0 @@
-tools:
-  # The order in which tools appear affects the order in which we generate
-  # LaTeX summary tables.
-  - title: TypeInfer
-    command: [ "./bin/TypeWhich", "migrate" ]
-
-benchmarks:
-  - file: adversarial/08-outflows.gtlc
