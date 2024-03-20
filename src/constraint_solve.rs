@@ -1,4 +1,7 @@
 use either::Either::{Left, Right};
+use crate::syntax::Any;
+use crate::type_migrate::ATyp;
+
 use super::syntax::{MetaVar, Typ};
 use super::type_migrate::{Ans, CSet, Constraint, HIndex};
 use super::type_migrate::Constraint::*;
@@ -9,54 +12,49 @@ fn conflict_solve(phi: &CSet, sigma: &mut Ans, psi: &HIndex) {
     for c1 in iterator.iter() {
         match c1 {
             // G < a => a = G | a = ?
-            Constraint::Precious(Right(a), Left(t @ MetaVar::Atom(_)))
-            | Constraint::Precious(Right(a), Left(t @ MetaVar::Dom(_)))
-            | Constraint::Precious(Right(a), Left(t @ MetaVar::Cod(_))) => {
-                match sigma.get(t) {
-                    Some(b) => {
-                        if a.to_typ() != b.clone() {
-                            sigma.insert(t.clone(), Typ::Any);
-                        }
-                    }
-                    None => {
-                        sigma.insert(t.clone(), a.to_typ());
-                    }
-                }
+            Precious(Right(_), Left(t )) 
+            if !t.is_arr() => {
+                panic!("Should not generate G < a in conflict solve");
             }
             // a < G1 & a < G2 => a = ?    
-            Constraint::Precious(t1 @ Left(t @ MetaVar::Atom(_)), t2 @ Right(_))
-            | Constraint::Precious(t1 @ Left(t @ MetaVar::Dom(_)), t2 @ Right(_))
-            | Constraint::Precious(t1 @ Left(t @ MetaVar::Cod(_)), t2 @ Right(_)) => {
+            Precious(t1 @ Left(t ), t2 @ Right(_))
+            if !t.is_arr() => {
                 for c2 in iterator.iter() {
                     match c2 {
-                        Constraint::Precious(t3, t4) => {
+                        Precious(t3, t4) => {
                             if t1 == t3 && t2 != t4 && t4.is_right() {
-                                sigma.insert(t.clone(), Typ::Any);
+                                sigma.insert(t.clone(), Left(Any::Base));
                             }
                         }
                         _ => {}
                     }
-                    
                 }
             }
             // b = ? & a < b => a = ?
-            Constraint::Precious(Left(t1), Left(t2)) => {
-                if sigma.get(t2) == Some(&Typ::Any){
-                    sigma.insert(t1.clone(), Typ::Any);
-                }
+            // a = G & a < b => b = G
+            Precious(Left(t1), Left(t2)) => {
+                match (sigma.get(t1), sigma.get(t2)) {
+                    (_, Some(Left(Any::Base))) => {
+                        sigma.insert(t1.clone(), Left(Any::Base));
+                    }
+                    (Some(Right(t)), None) => {
+                        sigma.insert(t2.clone(), Right(t.clone()));
+                    }
+                    _ => {}
+                };
             }
-            Constraint::Consistent(Left(t1), Left(t2))  => {
-                if sigma.contains_key(t1) && sigma.contains_key(t2) && 
-                    !consistent(sigma.get(t1).unwrap(), sigma.get(t2).unwrap()) {
-                        sigma.insert(t1.clone(), Typ::Any);
-                        sigma.insert(t2.clone(), Typ::Any);
-                }
+            // a = G1 & b = G2 & a ~ b => a = b = ? 
+            Consistent(Left(t1), Left(t2)) 
+            if sigma.contains_key(t1) && sigma.contains_key(t2) && 
+            !consistent(sigma.get(t1).unwrap(), sigma.get(t2).unwrap()) => {
+                sigma.insert(t1.clone(), Left(Any::Base));
+                sigma.insert(t2.clone(), Left(Any::Base));
             }
-            Constraint::Consistent(Left(t1), Right(t2))
-            | Constraint::Consistent(Right(t2), Left(t1)) => {
-                if sigma.contains_key(t1) && !consistent(sigma.get(t1).unwrap(), &t2.to_typ()) {
-                    sigma.insert(t1.clone(), Typ::Any);
-                }
+            // a = G1 & a ~ G2 => a = ?
+            Consistent(Left(t1), Right(t2))
+            | Consistent(Right(t2), Left(t1)) 
+            if sigma.contains_key(t1) && !consistent(sigma.get(t1).unwrap(), &Right(t2.clone())) => {
+                sigma.insert(t1.clone(), Left(Any::Base));
             }
             _ => {}
         }
@@ -64,38 +62,24 @@ fn conflict_solve(phi: &CSet, sigma: &mut Ans, psi: &HIndex) {
     
     for t in psi.iter() {
         match sigma.get(t) {
-            Some(Typ::Int) | Some(Typ::Bool) | Some(Typ::Float) | Some(Typ::Char) | Some(Typ::Any) => {
-                sigma.insert(t.clone(), Typ::Any);
-                sigma.insert(t.dom(), Typ::Any);
-                sigma.insert(t.cod(), Typ::Any);
-            }
-            Some(Typ::Arr(t1, t2)) => {
-                let dom = sigma.get(&t.dom()).unwrap();
-                let cod = sigma.get(&t.cod()).unwrap();
-                if dom.clone() != *t1.clone() {
-                    sigma.insert(t.clone(), Typ::Arr(Box::new(Typ::Any), t2.clone()));
-                    sigma.insert(t.dom(), Typ::Any);
-                } else if cod.clone() != *t2.clone() {
-                    sigma.insert(t.clone(), Typ::Arr(t1.clone(), Box::new(Typ::Any)));
-                    sigma.insert(t.cod(), Typ::Any);
-                }
-            }
-            None if sigma.contains_key(&t.dom()) && sigma.contains_key(&t.cod()) => {
-                sigma.insert(t.clone(), Typ::Arr(Box::new(sigma.get(&t.dom()).unwrap().clone()),
-                                Box::new(sigma.get(&t.cod()).unwrap().clone())));
+            Some(_) => {
+                sigma.insert(t.clone(), Left(Any::Base));
+                sigma.insert(t.dom(), Left(Any::Base));
+                sigma.insert(t.cod(), Left(Any::Base));
             }
             _ => {}
         }
     }
+    
     if !orig_sigma.difference(sigma.clone()).is_empty() {
         conflict_solve(phi, sigma, psi);
     }
 }
 
-fn consistent(t1: &Typ, t2: &Typ) -> bool {
+fn consistent(t1: &ATyp, t2: &ATyp) -> bool {
     match (t1, t2) {
-        (_, Typ::Any) | (Typ::Any, _) => true,
-        (_, _) => {
+        (_, Left(_)) | (Left(_), _) => true,
+        _ => {
             if t1 == t2 {true} else {false}
         }
     }
@@ -105,15 +89,18 @@ fn try_assign(phi: &mut CSet, sigma: &mut Ans) {
     let iterator = phi.clone();
     for c1 in iterator.iter() {
         match c1 {
-            Precious(Left(t1 @ MetaVar::Atom(_)), Right(t2)) if !sigma.contains_key(t1) => {
-                sigma.insert(t1.clone(), t2.to_typ());
+            // a < G => a = G
+            Precious(Left(t1), Right(t2)) 
+            if !sigma.contains_key(t1) && !t1.is_arr() => {
+                sigma.insert(t1.clone(), Right(t2.clone()));
             },
-            Precious(Left(t1 @ MetaVar::Atom(_)), Left(t2 @ MetaVar::Atom(_))) 
-            if !sigma.contains_key(t1) && sigma.contains_key(t2) => {
-                let t = sigma.get(t2).unwrap();
-                if t.is_ground() {
-                    sigma.insert(t1.clone(), t.clone());
-                }
+            // a < b & b = G => a = G
+            Precious(Left(t1), Left(t2)) 
+            if !sigma.contains_key(t1) && sigma.contains_key(t2) && !t1.is_arr() && !t2.is_arr() => {
+                match sigma.get(t2).unwrap() {
+                    Right(t) => sigma.insert(t1.clone(), Right(t.clone())),
+                    Left(_) => panic!("Should not have a < ? in try_assign"),
+                };
             }
             _ => {}
         }

@@ -20,6 +20,11 @@ impl GroundTyp {
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub enum Any {
+    Base,
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum MetaVar {
     Atom(u32),
     Arr(Box<MetaVar>, Box<MetaVar>),
@@ -50,6 +55,13 @@ impl MetaVar {
 
     pub fn cod(&self) -> MetaVar {
         MetaVar::Cod(Box::new(self.clone()))
+    }
+
+    pub fn parent(&self) -> MetaVar {
+        match self {
+            MetaVar::Dom(t) | MetaVar::Cod(t) => *t.clone(),
+            _ => self.clone(),
+        }
     }
 }
 

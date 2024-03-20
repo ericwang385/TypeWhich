@@ -5,6 +5,7 @@ use either::Either::{Left, Right};
 use crate::syntax::{Exp, GroundTyp, MetaVar, Typ};
 use super::type_migrate::{Env, CSet, HIndex, CTyp, Constraint};
 use super::syntax::Exp::*;
+use super::type_migrate::Constraint::*;
 
 fn next_metavar() -> MetaVar {
     MetaVar::Atom(inc_metavar())
@@ -40,8 +41,8 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (MetaVar, CSet) {
             let funt = MetaVar::Arr(Box::new(alpha.clone()), Box::new(beta.clone()));
             coerce(t1.to_typ(), funt.to_typ(), e1);
             coerce(t2.to_typ(), alpha.to_typ(), e2);
-            phi.insert(Constraint::Precious(Left(t1), Left(funt)));
-            phi.insert(Constraint::Precious(Left(t2), Left(alpha)));
+            phi.insert(Precious(Left(t1), Left(funt)));
+            phi.insert(Precious(Left(t2), Left(alpha)));
             (beta, phi)
         },
         UnaryOp(op, e) => {
@@ -50,7 +51,7 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (MetaVar, CSet) {
             let rett = ret.to_groundtyp().unwrap_or_else(|| panic!("UnaryOp with higher-order behavior"));
             let (t2, mut phi) = constraint_gen(e, &env);
             coerce(t2.to_typ(), t1, e);
-            phi.insert(Constraint::Precious(Left(t2), Right(t11)));
+            phi.insert(Precious(Left(t2), Right(t11)));
             outer_coerce(Right(rett), e, phi)
         },
         BinaryOp(op, e1, e2) => {
@@ -63,8 +64,8 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (MetaVar, CSet) {
             let mut phi = phi1.union(phi2);
             coerce(t3.to_typ(), t1, e1);
             coerce(t4.to_typ(), t2, e2);
-            phi.insert(Constraint::Precious(Left(t3), Right(t11)));
-            phi.insert(Constraint::Precious(Left(t4), Right(t22)));
+            phi.insert(Precious(Left(t3), Right(t11)));
+            phi.insert(Precious(Left(t4), Right(t22)));
             outer_coerce(Right(rett), exp, phi)
         },
         Let(x, e1, e2) => {
@@ -83,9 +84,9 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (MetaVar, CSet) {
             coerce(t1.to_typ(), Typ::Bool, cond);
             coerce(t2.to_typ(), alpha.to_typ(), e1);
             coerce(t3.to_typ(), alpha.to_typ(), e2);
-            phi.insert(Constraint::Precious(Left(t1), Right(GroundTyp::Bool)));
-            phi.insert(Constraint::Precious(Left(alpha.clone()), Left(t2)));
-            phi.insert(Constraint::Precious(Left(alpha.clone()), Left(t3)));
+            phi.insert(Precious(Left(t1), Right(GroundTyp::Bool)));
+            phi.insert(Precious(Left(alpha.clone()), Left(t2)));
+            phi.insert(Precious(Left(alpha.clone()), Left(t3)));
             (alpha, phi)
         },
         _ => todo!()
@@ -97,41 +98,49 @@ fn constraint_rewrite(phi: &mut CSet, psi: &mut HIndex) {
     let orig_hom = psi.clone();
     for c1 in iterator.iter() {
         match c1 {
-            Constraint::Precious(t1 @ Left(t11), t2 @ Left(t22)) 
-            if !t11.is_arr() && !t22.is_arr() => {
+            Precious(Left(t1), Left(t2)) 
+            if !t1.is_arr() && !t2.is_arr() => {
                 // a < b & (a = fun | b = fun)
-                match (t11, t22) {
-                    (MetaVar::Atom(_), _) | (_, MetaVar::Atom(_)) 
-                    if psi.contains(t11) || psi.contains(t22) => {
-                        phi.insert(Constraint::Precious(
-                            Left(MetaVar::Arr(Box::new(MetaVar::Dom(Box::new(t11.clone()))), Box::new(MetaVar::Cod(Box::new(t11.clone()))))), 
-                            Left(MetaVar::Arr(Box::new(MetaVar::Dom(Box::new(t22.clone()))), Box::new(MetaVar::Cod(Box::new(t22.clone())))))
-                        ));
-                        psi.insert(t11.clone());
-                        psi.insert(t22.clone());
+                match (t1, t2) {
+                    (MetaVar::Atom(_), _) | (_, MetaVar::Atom(_))
+                    if psi.contains(t1) ^ psi.contains(t2) => {
+                        phi.insert(Precious(Left(MetaVar::Arr(Box::new(t1.dom()), Box::new(t1.cod()))), 
+                                            Left(MetaVar::Arr(Box::new(t2.dom()), Box::new(t2.cod())))));
+                        psi.insert(t1.clone());
+                        psi.insert(t2.clone());
                     }
-                    (MetaVar::Dom(a), MetaVar::Dom(b)) | (MetaVar::Cod(a), MetaVar::Cod(b))
-                    | (MetaVar::Dom(a), MetaVar::Cod(b)) | (MetaVar::Cod(a), MetaVar::Dom(b))
-                    if (psi.contains(t11) || psi.contains(t22)) && !phi.contains(&Constraint::Precious(Left(*a.clone()), Left(*b.clone()))) => {
-                        phi.insert(Constraint::Precious(
-                            Left(MetaVar::Arr(Box::new(MetaVar::Dom(Box::new(t11.clone()))), Box::new(MetaVar::Cod(Box::new(t11.clone()))))), 
-                            Left(MetaVar::Arr(Box::new(MetaVar::Dom(Box::new(t22.clone()))), Box::new(MetaVar::Cod(Box::new(t22.clone())))))
-                        ));
-                        psi.insert(t11.clone());
-                        psi.insert(t22.clone());
+                    (MetaVar::Dom(a), MetaVar::Dom(b)) 
+                    | (MetaVar::Cod(a), MetaVar::Cod(b))
+                    | (MetaVar::Dom(a), MetaVar::Cod(b)) 
+                    | (MetaVar::Cod(a), MetaVar::Dom(b)) 
+                    if (psi.contains(t1) ^ psi.contains(t2)) && 
+                    !phi.contains(&Precious(Left(*a.clone()), Left(*b.clone()))) => {
+                        phi.insert(Precious(Left(MetaVar::Arr(Box::new(t1.dom()), Box::new(t1.cod()))), 
+                                            Left(MetaVar::Arr(Box::new(t2.dom()), Box::new(t2.cod())))));
+                        psi.insert(t1.clone());
+                        psi.insert(t2.clone());
                     }
                     _ => {}
                 }
+                
                 for c2 in iterator.iter() {
                     match c2 {
                         // a < b & b < G => a < G
                         // a < b & b < c => a < c
-                        Constraint::Precious(t3 @ Left(MetaVar::Atom(_)), t4 @ Right(_))
-                        | Constraint::Precious(t3 @ Left(MetaVar::Atom(_)), t4 @ Left(MetaVar::Atom(_))) => {
+                        Constraint::Precious(Left(t3), Right(t4))
+                        if !t3.is_arr() => {
+                            if t2 == t3 {
+                                phi.insert(Constraint::Precious(Left(t1.clone()), Right(t4.clone())));
+                            } else if t1 == t3 {
+                                phi.insert(Constraint::Consistent(Left(t2.clone()), Right(t4.clone())));
+                            }
+                        }
+                        Constraint::Precious(Left(t3), Left(t4)) 
+                        if !t3.is_arr() && !t4.is_arr() => {
                             if t2 == t3 && t1 != t4 {
-                                phi.insert(Constraint::Precious(t1.clone(), t4.clone()));
+                                phi.insert(Constraint::Precious(Left(t1.clone()), Left(t4.clone())));
                             } else if t1 == t3 && t2 != t4 {
-                                phi.insert(Constraint::Consistent(t2.clone(), t4.clone()));
+                                phi.insert(Constraint::Consistent(Left(t2.clone()), Left(t4.clone())));
                             }
                         }
                         _ => {}
@@ -139,29 +148,27 @@ fn constraint_rewrite(phi: &mut CSet, psi: &mut HIndex) {
                 }
             }
             // a -> b < c -> d => a < c & b < d
-            Constraint::Precious(Left(MetaVar::Arr(t11, t12)), Left(MetaVar::Arr(t21, t22))) => {
+            Precious(Left(MetaVar::Arr(t11, t12)), Left(MetaVar::Arr(t21, t22))) => {
                 // phi.remove(&(t1.clone(), t2.clone()));
-                phi.insert(Constraint::Precious(Left(*t11.clone()), Left(*t21.clone())));
-                phi.insert(Constraint::Precious(Left(*t12.clone()), Left(*t22.clone())));
+                phi.insert(Precious(Left(*t11.clone()), Left(*t21.clone())));
+                phi.insert(Precious(Left(*t12.clone()), Left(*t22.clone())));
             }
             // a < b -> c
-            Constraint::Precious(Left(t @ MetaVar::Atom(_)), t2 @ Left(MetaVar::Arr(_,_)))
-            | Constraint::Precious(Left(t @ MetaVar::Dom(_)), t2 @ Left(MetaVar::Arr(_,_)))
-            | Constraint::Precious(Left(t @ MetaVar::Cod(_)), t2 @ Left(MetaVar::Arr(_,_))) => {
+            Precious(Left(t), t2 @ Left(MetaVar::Arr(_,_))) 
+            if !t.is_arr() => {
                 psi.insert(t.clone());
-                phi.insert(Constraint::Precious(
-                    Left(MetaVar::Arr(Box::new(MetaVar::Dom(Box::new(t.clone()))), Box::new(MetaVar::Cod(Box::new(t.clone()))))), 
+                phi.insert(Precious(
+                    Left(MetaVar::Arr(Box::new(t.dom()), Box::new(t.cod()))), 
                     t2.clone()
                 ));
             }
             // b -> c < a
-            Constraint::Precious(t1 @ Left(MetaVar::Arr(_, _)), Left(t @ MetaVar::Atom(_)))
-            | Constraint::Precious(t1 @ Left(MetaVar::Arr(_, _)), Left(t @ MetaVar::Dom(_)))
-            | Constraint::Precious(t1 @ Left(MetaVar::Arr(_, _)), Left(t @ MetaVar::Cod(_))) => {
+            Constraint::Precious(t1 @ Left(MetaVar::Arr(_, _)), Left(t))
+            if !t.is_arr() => {
                 psi.insert(t.clone());
-                phi.insert(Constraint::Precious(
+                phi.insert(Precious(
                     t1.clone(),
-                    Left(MetaVar::Arr(Box::new(MetaVar::Dom(Box::new(t.clone()))), Box::new(MetaVar::Cod(Box::new(t.clone())))))
+                    Left(MetaVar::Arr(Box::new(t.dom()), Box::new(t.cod())))
                 ));
             }
             _ => {}

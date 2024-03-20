@@ -1,7 +1,7 @@
-use either::Either;
+use either::Either::{self, Left, Right};
 use im::{HashMap, HashSet};
 use crate::constraint_solve::csolve;
-use crate::syntax::GroundTyp;
+use crate::syntax::{Any, GroundTyp};
 use super::syntax::{Exp, Typ, MetaVar};
 use super::syntax::Exp::*;
 use super::constraint_gen::cgen;
@@ -16,37 +16,33 @@ pub type Env = HashMap<String, MetaVar>;
 pub type CTyp = Either<MetaVar, GroundTyp>;
 pub type CSet = HashSet<Constraint>;
 pub type HIndex = HashSet<MetaVar>;
-pub type Ans = HashMap<MetaVar, Typ>;
+pub type ATyp = Either<Any, GroundTyp>;
+pub type Ans = HashMap<MetaVar, ATyp>;
 
 // Entry Point
 pub fn type_infer(mut exp: Exp, env: &Env) -> Result<Exp, String> {
     let (mut phi, psi) = cgen(&mut exp, env);
-    let mut sigma = csolve(&mut phi, &psi);
-    fun_assign(&mut sigma, &psi);
+    let sigma = csolve(&mut phi, &psi);
     annotate(&sigma, &mut exp, &psi);
     Ok(exp)
 }
 
-fn fun_assign(sigma: &mut Ans, psi: &HIndex) {
-    for t in psi {
-        if sigma.get(t) == None {
-            sigma.insert(t.clone(), Typ::Arr(Box::new(sigma.get(&t.dom()).unwrap_or(&Typ::Any).clone()),
-                                Box::new(sigma.get(&t.cod()).unwrap_or(&Typ::Any).clone())));
+fn annotate_metavar(sigma: &Ans, t: &MetaVar, psi: &HIndex) -> Typ {
+    match sigma.get(t) {
+        Some(Left(_)) => Typ::Any,
+        Some(Right(t)) => t.to_typ(),
+        None if psi.contains(t) => {
+            let dom = annotate_metavar(sigma, &t.dom(), psi);
+            let cod = annotate_metavar(sigma, &t.cod(), psi);
+            Typ::Arr(Box::new(dom), Box::new(cod))
         }
+        None => Typ::Any 
     }
 }
 
 fn annotate_typ(sigma: &Ans, t: &mut Typ, psi: &HIndex) {
     match t {
-        Typ::Metavar(i) => {
-            *t = match sigma.get(&MetaVar::Atom(*i)) {
-                Some(s) => match s {
-                    Typ::Metavar(_) => panic!("Type variable in answer set at {}", i),
-                    _ => s.clone(),
-                },
-                None => Typ::Any,
-            }
-        }
+        Typ::Metavar(i) => *t = annotate_metavar(sigma, &MetaVar::Atom(*i), psi),
         Typ::Arr(t1, t2) | Typ::Pair(t1, t2) => {
             annotate_typ(sigma, t1, psi);
             annotate_typ(sigma, t2, psi);
@@ -87,31 +83,25 @@ fn annotate(sigma: &Ans, exp: &mut Exp, psi: &HIndex) {
 
 // #[cfg(test)]
 mod test {
+    use crate::constraint_gen::cgen;
+    use crate::constraint_solve::csolve;
     use crate::syntax::Exp;
     use crate::parser::parse;
 
+    use super::annotate;
+
     fn test_migrate(orig: &str) -> Exp {
-        // let mut exp = parse(orig).unwrap();
-        // exp.fresh_types();
-        // let (_, mut phi) = constraint_gen(&mut exp, &Default::default());
-        // // let n = curr_metavar();
-        // let mut sigma = Default::default();
-        // let mut psi = Default::default();
-        // // println!("Before rewrite: {:?}", phi);
-        // // println!("Expression: {:?}", exp);
-        // constraint_rewrite(&mut phi, &mut psi);
-        // // println!("After rewrite: {:?}", phi);
-        // constraint_solve(&mut phi, &mut sigma, &psi);
-        // fun_assign(&mut sigma, &psi);
-        // // println!("Constraint:\n{:?}", phi);
-        // println!("Answer Set:\n{:?}", sigma);
-        // println!("Higher-Order Set:\n{:?}", psi);
-        // println!("Before Annotation:\n{:?}\n", exp);
-        // annotate(&sigma, &mut exp, &psi);
-        // println!("After Annotation \n {:?} \n", exp);
-        // println!("After Annotation Pretty:\n{}\n", exp);
-        // exp
-        todo!()
+        let mut exp = parse(orig).unwrap();
+        exp.fresh_types();
+        let (mut phi, psi) = cgen(&mut exp, &Default::default());
+        println!("Constraint: {:?}", phi);
+        let sigma = csolve(&mut phi, &psi);
+        println!("Answer Set:\n{:?}", sigma);
+        println!("Before Annotation:\n{:?}\n", exp);
+        annotate(&sigma, &mut exp, &psi);
+        println!("After Annotation \n {:?} \n", exp);
+        println!("After Annotation Pretty:\n{}\n", exp);
+        exp
     }
 
     #[test]
