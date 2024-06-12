@@ -15,6 +15,7 @@ pub enum Constraint {
 pub type Env = HashMap<String, MetaVar>;
 pub type CTyp = Either<MetaVar, GroundTyp>;
 pub type CSet = HashSet<Constraint>;
+pub type FGraph = HashSet<(MetaVar, MetaVar)>;
 pub type HIndex = HashSet<MetaVar>;
 pub type ATyp = Either<Any, GroundTyp>;
 pub type Ans = HashMap<MetaVar, ATyp>;

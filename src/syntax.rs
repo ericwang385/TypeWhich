@@ -57,10 +57,11 @@ impl MetaVar {
         MetaVar::Cod(Box::new(self.clone()))
     }
 
-    pub fn parent(&self) -> MetaVar {
+    pub fn root(&self) -> MetaVar {
         match self {
-            MetaVar::Dom(t) | MetaVar::Cod(t) => *t.clone(),
-            _ => self.clone(),
+            MetaVar::Dom(t) | MetaVar::Cod(t) => t.root(),
+            MetaVar::Atom(_) => self.clone(),
+            _ => panic!("Function on metavar don't have a root")
         }
     }
 }
