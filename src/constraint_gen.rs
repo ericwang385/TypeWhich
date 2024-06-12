@@ -99,7 +99,7 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (MetaVar, CSet, FGraph) {
     }
 }
 
-fn constraint_rewrite(phi: &mut CSet, psi: &mut HIndex) {
+fn constraint_rewrite(phi: &mut CSet, psi: &mut HIndex, g: &mut FGraph) {
     let iterator = phi.clone();
     let orig_hom = psi.clone();
     for c1 in iterator.iter() {
@@ -107,47 +107,40 @@ fn constraint_rewrite(phi: &mut CSet, psi: &mut HIndex) {
             Precious(Left(t1), Left(t2)) 
             if !t1.is_arr() && !t2.is_arr() => {
                 // a < b & (a = fun | b = fun)
-                match (t1, t2) {
-                    (MetaVar::Atom(_), _) | (_, MetaVar::Atom(_))
-                    if psi.contains(t1) ^ psi.contains(t2) => {
-                        phi.insert(Precious(Left(MetaVar::Arr(Box::new(t1.dom()), Box::new(t1.cod()))), 
-                                            Left(MetaVar::Arr(Box::new(t2.dom()), Box::new(t2.cod())))));
-                        psi.insert(t1.clone());
-                        psi.insert(t2.clone());
-                    }
-                    (MetaVar::Dom(a), MetaVar::Dom(b)) 
-                    | (MetaVar::Cod(a), MetaVar::Cod(b))
-                    | (MetaVar::Dom(a), MetaVar::Cod(b)) 
-                    | (MetaVar::Cod(a), MetaVar::Dom(b)) 
-                    if (psi.contains(t1) ^ psi.contains(t2)) && 
-                    !phi.contains(&Precious(Left(*a.clone()), Left(*b.clone()))) => {
-                        phi.insert(Precious(Left(MetaVar::Arr(Box::new(t1.dom()), Box::new(t1.cod()))), 
-                                            Left(MetaVar::Arr(Box::new(t2.dom()), Box::new(t2.cod())))));
-                        psi.insert(t1.clone());
-                        psi.insert(t2.clone());
-                    }
-                    _ => {}
+                if psi.contains(t1) && !psi.contains(t2) && acyclic(t1, t2, g) {
+                    phi.insert(Precious(Left(t1.dom()), Left(t2.dom())));
+                    phi.insert(Precious(Left(t1.cod()), Left(t2.cod())));
+                    psi.insert(t2.clone());
+                    g.insert((t1.clone(), t2.clone()));
+                } else if !psi.contains(t1) && psi.contains(t2) && acyclic(t2, t1, g) {
+                    phi.insert(Precious(Left(t1.dom()), Left(t2.dom())));
+                    phi.insert(Precious(Left(t1.cod()), Left(t2.cod())));
+                    psi.insert(t1.clone());
+                    g.insert((t2.clone(), t1.clone()));
+                } else if psi.contains(t1) && psi.contains(t2) && !phi.contains(&Precious(Left(t1.dom()), Left(t2.dom()))) {
+                    phi.insert(Precious(Left(t1.dom()), Left(t2.dom())));
+                    phi.insert(Precious(Left(t1.cod()), Left(t2.cod())));
                 }
                 
                 for c2 in iterator.iter() {
                     match c2 {
                         // a < b & b < G => a < G
                         // a < b & b < c => a < c
-                        Constraint::Precious(Left(t3), Right(t4))
-                        if !t3.is_arr() => {
-                            if t2 == t3 {
-                                phi.insert(Constraint::Precious(Left(t1.clone()), Right(t4.clone())));
-                            } else if t1 == t3 {
-                                phi.insert(Constraint::Consistent(Left(t2.clone()), Right(t4.clone())));
-                            }
+                        Precious(Left(t3), Right(t4))
+                        if t1 == t3 => {
+                            phi.insert(Consistent(Left(t2.clone()), Right(t4.clone())));
                         }
-                        Constraint::Precious(Left(t3), Left(t4)) 
-                        if !t3.is_arr() && !t4.is_arr() => {
-                            if t2 == t3 && t1 != t4 {
-                                phi.insert(Constraint::Precious(Left(t1.clone()), Left(t4.clone())));
-                            } else if t1 == t3 && t2 != t4 {
-                                phi.insert(Constraint::Consistent(Left(t2.clone()), Left(t4.clone())));
-                            }
+                        Precious(Left(t3), Left(t4)) 
+                        if !t4.is_arr() && t1 == t3 && t2 != t4 => {
+                            phi.insert(Consistent(Left(t2.clone()), Left(t4.clone())));
+                        }
+                        Precious(Right(t3), Left(t4))
+                        if t2 == t4 => {
+                            phi.insert(Consistent(Left(t1.clone()), Right(t3.clone())));
+                        }
+                        Precious(Left(t3), Left(t4))
+                        if !t3.is_arr() && t2 == t4 && t1 != t3 => {
+                            phi.insert(Consistent(Left(t1.clone()), Left(t3.clone())));
                         }
                         _ => {}
                     }
@@ -185,7 +178,7 @@ fn constraint_rewrite(phi: &mut CSet, psi: &mut HIndex) {
     let psi_diff = orig_hom.difference(psi.clone());
     
     if !phi_diff.is_empty() || !psi_diff.is_empty() {
-        constraint_rewrite(phi, psi);
+        constraint_rewrite(phi, psi, g);
     }
 }
 
@@ -215,9 +208,13 @@ fn outer_coerce(t: CTyp, exp: &mut Exp, mut phi: CSet, mut g: FGraph) -> (MetaVa
     (alpha, phi, g)
 }
 
+fn acyclic(t1: &MetaVar, t2: &MetaVar, g: &FGraph) -> bool {
+    todo!()
+}
+
 pub fn cgen(exp: &mut Exp, env: &Env) -> (CSet, HIndex) {
     let (_, mut phi, mut g) = constraint_gen(exp, env);
     let mut psi = Default::default();
-    constraint_rewrite(&mut phi, &mut psi);
+    constraint_rewrite(&mut phi, &mut psi, &mut g);
     (phi, psi)
 }
