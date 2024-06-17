@@ -122,7 +122,7 @@ fn try_assign(phi: &CSet, sigma: &mut Ans) {
             Precious(Left(t1), Right(t2)) 
             if !sigma.contains_key(t1) && !t1.is_arr() => {
                 sigma.insert(t1.clone(), Right(t2.clone()));
-                return;
+                // return;
             },
             // a < b & b = G => a = G
             Precious(Left(t1), Left(t2)) 
@@ -130,7 +130,7 @@ fn try_assign(phi: &CSet, sigma: &mut Ans) {
                 match sigma.get(t2).unwrap() {
                     Right(t) => {
                         sigma.insert(t1.clone(), Right(t.clone()));
-                        return;
+                        // return;
                     }
                     Left(_) => panic!("Should not have a < ? in try_assign"),
                 };
