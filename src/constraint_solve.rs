@@ -132,7 +132,8 @@ fn try_assign(phi: &CSet, sigma: &mut Ans) {
                         sigma.insert(t1.clone(), Right(t.clone()));
                         // return;
                     }
-                    Left(_) => panic!("Should not have a < ? in try_assign"),
+                    // Left(_) => panic!("Should not have a < ? in try_assign"),
+                    _ => {}
                 };
             }
             _ => {}
