@@ -7,6 +7,7 @@ mod parser;
 mod precision;
 mod pretty;
 mod syntax;
+mod fgraph;
 mod type_check;
 mod type_migrate;
 mod constraint_gen;

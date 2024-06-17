@@ -1,78 +1,90 @@
 use either::Either::{Left, Right};
+use crate::fgraph::{is_fun, FGraph};
 use crate::syntax::Any;
 use crate::type_migrate::ATyp;
 
 use super::syntax::{MetaVar, Typ};
-use super::type_migrate::{Ans, CSet, Constraint, HIndex};
+use super::type_migrate::{Ans, CSet, Constraint};
 use super::type_migrate::Constraint::*;
 
-fn conflict_solve(phi: &CSet, sigma: &mut Ans, psi: &HIndex) {
+fn conflict_solve(phi: &CSet, g: &FGraph, sigma: &mut Ans) {
     let iterator = phi.clone();
     let orig_sigma = sigma.clone();
     for c1 in iterator.iter() {
         match c1 {
-            // G < a => a = G | a = ?
-            Precious(Right(_), Left(t )) 
-            if !t.is_arr() => {
-                panic!("Should not generate G < a in conflict solve");
-            }
-            // a < G1 & a < G2 => a = ?    
-            Precious(t1 @ Left(t ), t2 @ Right(_))
-            if !t.is_arr() => {
-                for c2 in iterator.iter() {
-                    match c2 {
-                        Precious(t3, t4) => {
-                            if t1 == t3 && t2 != t4 && t4.is_right() {
-                                sigma.insert(t.clone(), Left(Any::Base));
-                            }
+            //CBase
+            Precious(Left(t1), Right(t2)) => {
+                match sigma.get(t1) {
+                    Some(Right(t)) => {
+                        if t != t2 {
+                            sigma.insert(t1.clone(), Left(Any::Base));
                         }
-                        _ => {}
-                    }
-                }
-            }
-            // b = ? & a < b => a = ?
-            // a = G & a < b => b = G
-            Precious(Left(t1), Left(t2)) => {
-                match (sigma.get(t1), sigma.get(t2)) {
-                    (_, Some(Left(Any::Base))) => {
-                        sigma.insert(t1.clone(), Left(Any::Base));
-                    }
-                    (Some(Right(t)), None) => {
-                        sigma.insert(t2.clone(), Right(t.clone()));
                     }
                     _ => {}
-                };
+                }
             }
-            // a = G1 & b = G2 & a ~ b => a = b = ? 
-            Consistent(Left(t1), Left(t2)) 
-            if sigma.contains_key(t1) && sigma.contains_key(t2) && 
-            !consistent(sigma.get(t1).unwrap(), sigma.get(t2).unwrap()) => {
-                sigma.insert(t1.clone(), Left(Any::Base));
-                sigma.insert(t2.clone(), Left(Any::Base));
+            //CPrecious & CDyn
+            Precious(Left(t1), Left(t2)) => {
+                match (sigma.get(t1), sigma.get(t2)) {
+                    (Some(Right(t3)), Some(Right(t4))) => {
+                        if t3 != t4 {
+                            sigma.insert(t1.clone(), Left(Any::Base));
+                        }
+                    }
+                    (Some(Right(t3)), None) => {
+                        sigma.insert(t2.clone(), Right(t3.clone()));
+                    }
+                    (_, Some(Left(_))) => {
+                        sigma.insert(t1.clone(), Left(Any::Base));
+                    }
+                    _ => {}
+                }
             }
-            // a = G1 & a ~ G2 => a = ?
-            Consistent(Left(t1), Right(t2))
-            | Consistent(Right(t2), Left(t1)) 
-            if sigma.contains_key(t1) && !consistent(sigma.get(t1).unwrap(), &Right(t2.clone())) => {
-                sigma.insert(t1.clone(), Left(Any::Base));
+            //CConsistentBase
+            Consistent(Left(t1), Right(t2)) => {
+                match sigma.get(t1) {
+                    Some(t ) => {
+                        if !consistent(t, &Right(t2.clone())) {
+                            sigma.insert(t1.clone(), Left(Any::Base));
+                        }
+                    }
+                    _ => {}
+                }
             }
+            //CConsistent2
+            Consistent(Left(t1), Left(t2)) => {
+                match (sigma.get(t1), sigma.get(t2)) {
+                    (Some(t3), Some(t4)) => {
+                        if !consistent(t3, t4) {
+                            sigma.insert(t1.clone(), Left(Any::Base));
+                            sigma.insert(t2.clone(), Left(Any::Base));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            
             _ => {}
         }
     }
     
-    for t in psi.iter() {
-        match sigma.get(t) {
-            Some(_) => {
-                sigma.insert(t.clone(), Left(Any::Base));
-                sigma.insert(t.dom(), Left(Any::Base));
-                sigma.insert(t.cod(), Left(Any::Base));
+    let diff = orig_sigma.difference(sigma.clone());
+
+    if !diff.is_empty() {
+        //CFunBase & CFunDyn
+        for (i, t) in diff.iter() {
+            match is_fun(i, g) {
+                Some(_) => {
+                    sigma.insert(i.dom(), Left(Any::Base));
+                    sigma.insert(i.cod(), Left(Any::Base));
+                    if t.is_right() {
+                        sigma.insert(i.clone(), Left(Any::Base));
+                    }
+                }
+                _ => {}
             }
-            _ => {}
         }
-    }
-    
-    if !orig_sigma.difference(sigma.clone()).is_empty() {
-        conflict_solve(phi, sigma, psi);
+        conflict_solve(phi, g, sigma);
     }
 }
 
@@ -85,7 +97,7 @@ fn consistent(t1: &ATyp, t2: &ATyp) -> bool {
     }
 }
 
-fn try_assign(phi: &mut CSet, sigma: &mut Ans) {
+fn try_assign(phi: &CSet, sigma: &mut Ans) {
     let iterator = phi.clone();
     for c1 in iterator.iter() {
         match c1 {
@@ -93,12 +105,16 @@ fn try_assign(phi: &mut CSet, sigma: &mut Ans) {
             Precious(Left(t1), Right(t2)) 
             if !sigma.contains_key(t1) && !t1.is_arr() => {
                 sigma.insert(t1.clone(), Right(t2.clone()));
+                // return;
             },
             // a < b & b = G => a = G
             Precious(Left(t1), Left(t2)) 
             if !sigma.contains_key(t1) && sigma.contains_key(t2) && !t1.is_arr() && !t2.is_arr() => {
                 match sigma.get(t2).unwrap() {
-                    Right(t) => sigma.insert(t1.clone(), Right(t.clone())),
+                    Right(t) => {
+                        sigma.insert(t1.clone(), Right(t.clone()));
+                        // return;
+                    }
                     Left(_) => panic!("Should not have a < ? in try_assign"),
                 };
             }
@@ -107,12 +123,12 @@ fn try_assign(phi: &mut CSet, sigma: &mut Ans) {
     }
 }
 
-pub fn csolve(phi: &mut CSet, psi: &HIndex) -> Ans {
+pub fn csolve(phi: &CSet, g: &FGraph) -> Ans {
     let mut sigma : Ans = Default::default();
     loop {
         let orig_sigma = sigma.clone();
         let orig_phi = phi.clone();
-        conflict_solve(phi, &mut sigma, psi);
+        conflict_solve(phi, g, &mut sigma);
         try_assign(phi, &mut sigma);
         let sigma_diff = orig_sigma.difference(sigma.clone());
         let phi_diff = orig_phi.difference(phi.clone());

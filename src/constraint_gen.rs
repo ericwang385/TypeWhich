@@ -1,9 +1,10 @@
+use crate::fgraph::{acyclic, fgraph_union, is_fun, FGraph};
 use crate::parser::inc_metavar;
 use std::boxed::Box;
 use either::Either::{Left, Right};
-use im::HashSet;
+use im::{hashset, vector, HashSet};
 use crate::syntax::{Exp, GroundTyp, MetaVar, Typ};
-use super::type_migrate::{Env, CSet, HIndex, CTyp, Constraint, FGraph};
+use super::type_migrate::{Env, CSet, CTyp, Constraint};
 use super::syntax::Exp::*;
 use super::type_migrate::Constraint::*;
 
@@ -15,77 +16,87 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (MetaVar, CSet, FGraph) {
     match exp {
         PrimCoerce(..) => panic!("PrimCoerce should not appear in source"),
         Lit(lit) => {
-            let t = lit.typ().to_groundtyp().unwrap();
-            outer_coerce(Right(t), exp, Default::default(), Default::default())
+            let t = lit.typ();
+            let alpha = next_metavar();
+            coerce(t.clone(), alpha.to_typ(), exp);
+            let phi = HashSet::unit(Precious(Left(alpha.clone()), Right(t.to_groundtyp().unwrap())));
+            (alpha, phi, Default::default())
         },
         Var(x) => {
             let t = env.get(x)
-                .unwrap_or_else(|| panic!("unbound identifier {}", x))
-                .clone();
-            outer_coerce(Left(t), exp, Default::default(), Default::default())
+                .unwrap_or_else(|| panic!("unbound identifier {}", x));
+            let alpha = next_metavar();
+            coerce(t.to_typ(), alpha.to_typ(), exp);
+            let phi = HashSet::unit(Precious(Left(alpha.clone()), Left(t.clone())));
+            (alpha, phi, Default::default())
         },
         Fun(f, t, body) => {
             let mut env = env.clone();
             let t1 = t.to_metavar();
+            let alpha = next_metavar();
             env.insert(f.clone(), t1.clone());
-            let (t2, phi, g) = constraint_gen(body, &env);
-            let funt = MetaVar::Arr(Box::new(t1), Box::new(t2));
-            outer_coerce(Left(funt), exp, phi, g)
+            let (t2, mut phi, mut g) = constraint_gen(body, &env);
+            let funt = MetaVar::Arr(Box::new(t1.clone()), Box::new(t2.clone()));
+            coerce(funt.to_typ(), alpha.to_typ(), exp);
+            phi.insert(Precious(Left(alpha.dom()), Left(t1)));
+            phi.insert(Precious(Left(alpha.cod()), Left(t2)));
+            g.insert(g.len(), hashset![funt.clone(), alpha.clone()]);
+            (alpha, phi, g)
         },
         App(e1, e2) => {
             let (t1, phi1, g1) = constraint_gen(e1, &env);
             let (t2, phi2, g2) = constraint_gen(e2, &env);
             let mut phi = phi1.union(phi2);
-            let mut g = g1.union(g2);
+            let mut g = fgraph_union(g1, g2);
             let alpha = next_metavar();
             let beta = next_metavar();
             let funt = MetaVar::Arr(Box::new(alpha.clone()), Box::new(beta.clone()));
             coerce(t1.to_typ(), funt.to_typ(), e1);
             coerce(t2.to_typ(), alpha.to_typ(), e2);
-            phi.insert(Precious(Left(MetaVar::Dom(Box::new(t1.clone()))), Left(alpha.clone())));
-            phi.insert(Precious(Left(MetaVar::Cod(Box::new(t2.clone()))), Left(beta.clone())));
-            phi.insert(Precious(Left(t2), Left(alpha)));
-            g.insert((funt.clone(), t1.clone()));
+            phi.insert(Precious(Left(t1.dom()), Left(alpha.clone())));
+            phi.insert(Precious(Left(t1.cod()), Left(beta.clone())));
+            phi.insert(Precious(Left(t2.clone()), Left(alpha.clone())));
+            g.insert(g.len(), hashset![funt.clone(), t1.clone()]);
             (beta, phi, g)
         },
         UnaryOp(op, e) => {
             let (t1, ret) = op.typ();
-            let t11 = t1.to_groundtyp().unwrap_or_else(|| panic!("UnaryOp with higher-order behavior"));
-            let rett = ret.to_groundtyp().unwrap_or_else(|| panic!("UnaryOp with higher-order behavior"));
-            let (t2, mut phi, g) = constraint_gen(e, &env);
-            coerce(t2.to_typ(), t1, e);
-            phi.insert(Precious(Left(t2), Right(t11)));
-            outer_coerce(Right(rett), e, phi, g)
+            let (alpha, mut phi, g) = constraint_gen(e, &env);
+            let beta = next_metavar();
+            coerce(alpha.to_typ(), t1.clone(), e);
+            coerce(ret.clone(), beta.to_typ(), exp);
+            phi.insert(Precious(Left(alpha), Right(t1.to_groundtyp().unwrap_or_else(|| panic!("UnaryOp with higher-order behavior")))));
+            phi.insert(Precious(Left(beta.clone()), Right(ret.to_groundtyp().unwrap_or_else(|| panic!("UnaryOp with higher-order behavior")))));
+            (beta, phi, g)
         },
         BinaryOp(op, e1, e2) => {
             let (t1, t2, ret) = op.typ();
-            let t11 = t1.to_groundtyp().unwrap_or_else(|| panic!("BinaryOp with higher-order behavior"));
-            let t22 = t2.to_groundtyp().unwrap_or_else(|| panic!("BinaryOp with higher-order behavior"));
-            let rett = ret.to_groundtyp().unwrap_or_else(|| panic!("BinaryOp with higher-order behavior"));
-            let (t3, phi1, g1) = constraint_gen(e1, &env);
+            let (t3, phi1, mut g1) = constraint_gen(e1, &env);
             let (t4, phi2, g2) = constraint_gen(e2, &env);
             let mut phi = phi1.union(phi2);
-            let mut g = g1.union(g2);
-            coerce(t3.to_typ(), t1, e1);
-            coerce(t4.to_typ(), t2, e2);
-            phi.insert(Precious(Left(t3), Right(t11)));
-            phi.insert(Precious(Left(t4), Right(t22)));
-            outer_coerce(Right(rett), exp, phi, g)
-
+            let alpha = next_metavar();
+            let g = fgraph_union(g1, g2);
+            coerce(t3.to_typ(), t1.clone(), e1);
+            coerce(t4.to_typ(), t2.clone(), e2);
+            coerce(ret.clone(), alpha.to_typ(), exp);
+            phi.insert(Precious(Left(t3), Right(t1.to_groundtyp().unwrap_or_else(|| panic!("BinaryOp with higher-order behavior")))));
+            phi.insert(Precious(Left(t4), Right(t2.to_groundtyp().unwrap_or_else(|| panic!("BinaryOp with higher-order behavior")))));
+            phi.insert(Precious(Left(alpha.clone()), Right(ret.to_groundtyp().unwrap_or_else(|| panic!("BinaryOp with higher-order behavior")))));
+            (alpha, phi, g)
         },
         Let(x, e1, e2) => {
-            let (t1, phi1, g1) = constraint_gen(e1, &env);
+            let (t1, phi1, mut g1) = constraint_gen(e1, &env);
             let mut env = env.clone();
             env.insert(x.clone(), t1);
             let (t2, phi2, g2) = constraint_gen(e2, &env);
-            (t2, phi1.union(phi2), g1.union(g2))
+            (t2, phi1.union(phi2), fgraph_union(g1, g2))
         },
         If(cond, e1, e2) => {
-            let (t1, phi1, g1) = constraint_gen(cond, &env);
+            let (t1, phi1, mut g1) = constraint_gen(cond, &env);
             let (t2, phi2, g2) = constraint_gen(e1, &env);
             let (t3, phi3, g3) = constraint_gen(e2, &env);
             let mut phi = phi1.union(phi2).union(phi3);
-            let g = g1.union(g2).union(g3);
+            let g = fgraph_union(g1, fgraph_union(g2, g3));
             let alpha = next_metavar();
             coerce(t1.to_typ(), Typ::Bool, cond);
             coerce(t2.to_typ(), alpha.to_typ(), e1);
@@ -99,33 +110,44 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (MetaVar, CSet, FGraph) {
     }
 }
 
-fn constraint_rewrite(phi: &mut CSet, psi: &mut HIndex, g: &mut FGraph) {
+fn constraint_rewrite(phi: &mut CSet, g: &mut FGraph) {
     let iterator = phi.clone();
-    let orig_hom = psi.clone();
     for c1 in iterator.iter() {
         match c1 {
             Precious(Left(t1), Left(t2)) 
             if !t1.is_arr() && !t2.is_arr() => {
                 // a < b & (a = fun | b = fun)
-                if psi.contains(t1) && !psi.contains(t2) && acyclic(t1, t2, g) {
-                    phi.insert(Precious(Left(t1.dom()), Left(t2.dom())));
-                    phi.insert(Precious(Left(t1.cod()), Left(t2.cod())));
-                    psi.insert(t2.clone());
-                    g.insert((t1.clone(), t2.clone()));
-                } else if !psi.contains(t1) && psi.contains(t2) && acyclic(t2, t1, g) {
-                    phi.insert(Precious(Left(t1.dom()), Left(t2.dom())));
-                    phi.insert(Precious(Left(t1.cod()), Left(t2.cod())));
-                    psi.insert(t1.clone());
-                    g.insert((t2.clone(), t1.clone()));
-                } else if psi.contains(t1) && psi.contains(t2) && !phi.contains(&Precious(Left(t1.dom()), Left(t2.dom()))) {
-                    phi.insert(Precious(Left(t1.dom()), Left(t2.dom())));
-                    phi.insert(Precious(Left(t1.cod()), Left(t2.cod())));
+                //Fun FunctionalizeLR
+                match (is_fun(t1, g), is_fun(t2, g)) {
+                    (Some(_), Some(_)) 
+                    if !phi.contains(&Precious(Left(t1.dom()), Left(t2.dom()))) => {
+                        phi.insert(Precious(Left(t1.dom()), Left(t2.dom())));
+                        phi.insert(Precious(Left(t1.cod()), Left(t2.cod())));
+                    }
+                    (None, Some(i))
+                    if !acyclic(t2, t1, g) => {
+                        let mut path = g.get(&i).unwrap().clone();
+                        phi.insert(Precious(Left(t1.dom()), Left(t2.dom())));
+                        phi.insert(Precious(Left(t1.cod()), Left(t2.cod())));
+                        path.insert(t1.clone());
+                        g.insert(i, path);
+                    }
+                    (Some(i), None)
+                    if !acyclic(t1, t2, g) => {
+                        let mut path = g.get(&i).unwrap().clone();
+                        phi.insert(Precious(Left(t1.dom()), Left(t2.dom())));
+                        phi.insert(Precious(Left(t1.cod()), Left(t2.cod())));
+                        path.insert(t2.clone());
+                        g.insert(i, path);
+                    }
+                    _ => {}
                 }
                 
+                // a < b & b < G => a < G
+                // a < b & b < c => a < c
+                // ConsistentLR
                 for c2 in iterator.iter() {
                     match c2 {
-                        // a < b & b < G => a < G
-                        // a < b & b < c => a < c
                         Precious(Left(t3), Right(t4))
                         if t1 == t3 => {
                             phi.insert(Consistent(Left(t2.clone()), Right(t4.clone())));
@@ -146,39 +168,14 @@ fn constraint_rewrite(phi: &mut CSet, psi: &mut HIndex, g: &mut FGraph) {
                     }
                 }
             }
-            // a -> b < c -> d => a < c & b < d
-            Precious(Left(MetaVar::Arr(t11, t12)), Left(MetaVar::Arr(t21, t22))) => {
-                // phi.remove(&(t1.clone(), t2.clone()));
-                phi.insert(Precious(Left(*t11.clone()), Left(*t21.clone())));
-                phi.insert(Precious(Left(*t12.clone()), Left(*t22.clone())));
-            }
-            // a < b -> c
-            Precious(Left(t), t2 @ Left(MetaVar::Arr(_,_))) 
-            if !t.is_arr() => {
-                psi.insert(t.clone());
-                phi.insert(Precious(
-                    Left(MetaVar::Arr(Box::new(t.dom()), Box::new(t.cod()))), 
-                    t2.clone()
-                ));
-            }
-            // b -> c < a
-            Constraint::Precious(t1 @ Left(MetaVar::Arr(_, _)), Left(t))
-            if !t.is_arr() => {
-                psi.insert(t.clone());
-                phi.insert(Precious(
-                    t1.clone(),
-                    Left(MetaVar::Arr(Box::new(t.dom()), Box::new(t.cod())))
-                ));
-            }
             _ => {}
         }
     }
 
     let phi_diff = iterator.difference(phi.clone());
-    let psi_diff = orig_hom.difference(psi.clone());
     
-    if !phi_diff.is_empty() || !psi_diff.is_empty() {
-        constraint_rewrite(phi, psi, g);
+    if !phi_diff.is_empty() {
+        constraint_rewrite(phi, g);
     }
 }
 
@@ -186,35 +183,8 @@ fn coerce(t1: Typ, t2: Typ, exp: &mut Exp) {
     *exp = Exp::Coerce(t1, t2, Box::new(exp.take()))
 }
 
-fn outer_coerce(t: CTyp, exp: &mut Exp, mut phi: CSet, mut g: FGraph) -> (MetaVar, CSet, FGraph) {
-    let alpha = next_metavar();
-    match t {
-        Left(a @ MetaVar::Atom(_)) => {
-            coerce(a.to_typ(), alpha.to_typ(), exp);
-            phi.insert(Constraint::Precious(Left(alpha.clone()), Left(a)));
-        },
-        Left(MetaVar::Arr(t1, t2)) => {
-            coerce(MetaVar::Arr(t1.clone(), t2.clone()).to_typ(), alpha.to_typ(), exp);
-            phi.insert(Constraint::Precious(Left(MetaVar::Dom(Box::new(alpha.clone()))), Left(*t1.clone())));
-            phi.insert(Constraint::Precious(Left(MetaVar::Cod(Box::new(alpha.clone()))), Left(*t2.clone())));
-            g.insert((MetaVar::Arr(Box::new(*t1.clone()), Box::new(*t2.clone())), alpha.clone()));
-        },
-        Left(_) => panic!("Panic at outer coerce"),
-        Right(a) => {
-            coerce(a.to_typ(), alpha.to_typ(), exp);
-            phi.insert(Constraint::Precious(Left(alpha.clone()), Right(a)));
-        }
-    };
-    (alpha, phi, g)
-}
-
-fn acyclic(t1: &MetaVar, t2: &MetaVar, g: &FGraph) -> bool {
-    todo!()
-}
-
-pub fn cgen(exp: &mut Exp, env: &Env) -> (CSet, HIndex) {
+pub fn cgen(exp: &mut Exp, env: &Env) -> (CSet, FGraph) {
     let (_, mut phi, mut g) = constraint_gen(exp, env);
-    let mut psi = Default::default();
-    constraint_rewrite(&mut phi, &mut psi, &mut g);
-    (phi, psi)
+    constraint_rewrite(&mut phi, &mut g);
+    (phi, g)
 }

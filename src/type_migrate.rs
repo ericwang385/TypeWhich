@@ -1,6 +1,7 @@
 use either::Either::{self, Left, Right};
 use im::{HashMap, HashSet};
 use crate::constraint_solve::csolve;
+use crate::fgraph::{is_fun, FGraph};
 use crate::syntax::{Any, GroundTyp};
 use super::syntax::{Exp, Typ, MetaVar};
 use super::syntax::Exp::*;
@@ -15,58 +16,56 @@ pub enum Constraint {
 pub type Env = HashMap<String, MetaVar>;
 pub type CTyp = Either<MetaVar, GroundTyp>;
 pub type CSet = HashSet<Constraint>;
-pub type FGraph = HashSet<(MetaVar, MetaVar)>;
-pub type HIndex = HashSet<MetaVar>;
 pub type ATyp = Either<Any, GroundTyp>;
 pub type Ans = HashMap<MetaVar, ATyp>;
 
 // Entry Point
 pub fn type_infer(mut exp: Exp, env: &Env) -> Result<Exp, String> {
-    let (mut phi, psi) = cgen(&mut exp, env);
-    let sigma = csolve(&mut phi, &psi);
-    annotate(&sigma, &mut exp, &psi);
+    let (phi, g) = cgen(&mut exp, env);
+    let sigma = csolve(&phi, &g);
+    annotate(&sigma, &mut exp, &g);
     Ok(exp)
 }
 
-fn annotate_metavar(sigma: &Ans, t: &MetaVar, psi: &HIndex) -> Typ {
+fn annotate_metavar(sigma: &Ans, t: &MetaVar, g: &FGraph) -> Typ {
     match sigma.get(t) {
         Some(Left(_)) => Typ::Any,
         Some(Right(t)) => t.to_typ(),
-        None if psi.contains(t) => {
-            let dom = annotate_metavar(sigma, &t.dom(), psi);
-            let cod = annotate_metavar(sigma, &t.cod(), psi);
+        None if is_fun(t, g).is_some() => {
+            let dom = annotate_metavar(sigma, &t.dom(), g);
+            let cod = annotate_metavar(sigma, &t.cod(), g);
             Typ::Arr(Box::new(dom), Box::new(cod))
         }
         None => Typ::Any 
     }
 }
 
-fn annotate_typ(sigma: &Ans, t: &mut Typ, psi: &HIndex) {
+fn annotate_typ(sigma: &Ans, t: &mut Typ, g: &FGraph) {
     match t {
-        Typ::Metavar(i) => *t = annotate_metavar(sigma, &MetaVar::Atom(*i), psi),
+        Typ::Metavar(i) => *t = annotate_metavar(sigma, &MetaVar::Atom(*i), g),
         Typ::Arr(t1, t2) | Typ::Pair(t1, t2) => {
-            annotate_typ(sigma, t1, psi);
-            annotate_typ(sigma, t2, psi);
+            annotate_typ(sigma, t1, g);
+            annotate_typ(sigma, t2, g);
         }
         Typ::List(t) | Typ::Box(t) | Typ::Vect(t) => {
-            annotate_typ(sigma, t, psi);
+            annotate_typ(sigma, t, g);
         }
         Typ::Unit | Typ::Int | Typ::Float | Typ::Bool | Typ::Str | Typ::Char | Typ::Any => (),
     }
 }
 
-fn annotate(sigma: &Ans, exp: &mut Exp, psi: &HIndex) {
+fn annotate(sigma: &Ans, exp: &mut Exp, g: &FGraph) {
     match &mut *exp {
         PrimCoerce(..) => panic!("PrimCoerce should not appear in source"),
         Lit(..) | Var(..) => {}
         Exp::Fun(_, t, e) | Exp::Fix(_, t, e) | Exp::Ann(e, t) => {
-            annotate_typ(sigma, t, psi);
-            annotate(sigma, e, psi);
+            annotate_typ(sigma, t, g);
+            annotate(sigma, e, g);
         }
         Exp::Coerce(t1, t2, e) => {
-            annotate(sigma, e, psi);
-            annotate_typ(sigma, t1, psi);
-            annotate_typ(sigma, t2, psi);
+            annotate(sigma, e, g);
+            annotate_typ(sigma, t1, g);
+            annotate_typ(sigma, t2, g);
             if t1 == t2 {
                 *exp = e.take();
             }
@@ -75,8 +74,8 @@ fn annotate(sigma: &Ans, exp: &mut Exp, psi: &HIndex) {
         | Exp::Let(_, e1, e2)
         | Exp::BinaryOp(_, e1, e2)
         | Exp::AddOverload(e1, e2) => {
-            annotate(sigma, e1, psi);
-            annotate(sigma, e2, psi);
+            annotate(sigma, e1, g);
+            annotate(sigma, e2, g);
         }
         _ => {}
     }
@@ -94,12 +93,12 @@ mod test {
     fn test_migrate(orig: &str) -> Exp {
         let mut exp = parse(orig).unwrap();
         exp.fresh_types();
-        let (mut phi, psi) = cgen(&mut exp, &Default::default());
+        let (phi, g) = cgen(&mut exp, &Default::default());
         println!("Constraint: {:?}", phi);
-        let sigma = csolve(&mut phi, &psi);
+        let sigma = csolve(&phi, &g);
         println!("Answer Set:\n{:?}", sigma);
         println!("Before Annotation:\n{:?}\n", exp);
-        annotate(&sigma, &mut exp, &psi);
+        annotate(&sigma, &mut exp, &g);
         println!("After Annotation \n {:?} \n", exp);
         println!("After Annotation Pretty:\n{}\n", exp);
         exp
@@ -137,6 +136,11 @@ mod test {
     #[test]
     fn rank2_poly() {
         test_migrate("(fun i.(fun a. (i true)) (i 5) ) (fun x.x)");
+    }
+
+    #[test]
+    fn add_two_app() {
+        test_migrate("fun x . x 4 + x true");
     }
 
     #[test]
