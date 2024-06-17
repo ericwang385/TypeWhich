@@ -148,15 +148,21 @@ fn constraint_rewrite(phi: &mut CSet, g: &mut FGraph) {
                 // ConsistentLR
                 for c2 in iterator.iter() {
                     match c2 {
-                        Precious(Left(t3), Right(t4))
-                        if t1 == t3 => {
-                            phi.insert(Consistent(Left(t2.clone()), Right(t4.clone())));
-                            phi.insert(Consistent(Right(t4.clone()), Left(t2.clone())));
+                        Precious(Left(t3), Right(t4)) => {
+                            if t1 == t3 {
+                                phi.insert(Consistent(Left(t2.clone()), Right(t4.clone())));
+                            } else if t2 == t3 {
+                                phi.insert(Precious(Left(t1.clone()), Right(t4.clone())));
+                            }
                         }
                         Precious(Left(t3), Left(t4)) 
-                        if !t4.is_arr() && t1 == t3 && t2 != t4 => {
-                            phi.insert(Consistent(Left(t2.clone()), Left(t4.clone())));
-                            phi.insert(Consistent(Left(t4.clone()), Left(t2.clone())));
+                        if !t4.is_arr() && t2 != t4 => {
+                            if t1 == t3 {
+                                phi.insert(Consistent(Left(t2.clone()), Left(t4.clone())));
+                            } else if t2 == t3 {
+                                phi.insert(Precious(Left(t1.clone()), Left(t4.clone())));
+                            }
+                            
                         }
                         // Precious(Right(t3), Left(t4))
                         // if t2 == t4 => {
@@ -177,7 +183,6 @@ fn constraint_rewrite(phi: &mut CSet, g: &mut FGraph) {
             //             Consistent(t3, t4) 
             //             if (t2 == t3 && t1 != t4) => {
             //                 phi.insert(Consistent(t1.clone(), t4.clone()));
-            //                 phi.insert(Consistent(t4.clone(), t1.clone()));
             //             }
             //             _ => {}
             //         }

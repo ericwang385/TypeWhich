@@ -31,8 +31,25 @@ fn conflict_solve(phi: &CSet, g: &FGraph, sigma: &mut Ans) {
                             sigma.insert(t1.clone(), Left(Any::Base));
                         }
                     }
-                    (Some(Right(t3)), None) => {
-                        sigma.insert(t2.clone(), Right(t3.clone()));
+                    (Some(Right(t)), None) => {
+                        let mut flag = 0;
+                        for c2 in iterator.iter() {
+                            match c2 {
+                                Precious(Left(t3), Left(t4))
+                                if t4 == t2 => {
+                                    let ans = sigma.get(t3);
+                                    if ans.is_none() {
+                                        flag = flag + 1;
+                                    } else if sigma.get(t3) != Some(&Right(t.clone())) {
+                                        flag = flag + 2;
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        if flag <= 1 {
+                            sigma.insert(t2.clone(), Right(t.clone()));
+                        }
                     }
                     (_, Some(Left(_))) => {
                         sigma.insert(t1.clone(), Left(Any::Base));
@@ -105,7 +122,7 @@ fn try_assign(phi: &CSet, sigma: &mut Ans) {
             Precious(Left(t1), Right(t2)) 
             if !sigma.contains_key(t1) && !t1.is_arr() => {
                 sigma.insert(t1.clone(), Right(t2.clone()));
-                // return;
+                return;
             },
             // a < b & b = G => a = G
             Precious(Left(t1), Left(t2)) 
@@ -113,7 +130,7 @@ fn try_assign(phi: &CSet, sigma: &mut Ans) {
                 match sigma.get(t2).unwrap() {
                     Right(t) => {
                         sigma.insert(t1.clone(), Right(t.clone()));
-                        // return;
+                        return;
                     }
                     Left(_) => panic!("Should not have a < ? in try_assign"),
                 };
