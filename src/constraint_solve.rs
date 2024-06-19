@@ -3,8 +3,7 @@ use crate::fgraph::{is_fun, FGraph};
 use crate::syntax::Any;
 use crate::type_migrate::ATyp;
 
-use super::syntax::{MetaVar, Typ};
-use super::type_migrate::{Ans, CSet, Constraint};
+use super::type_migrate::{Ans, CSet};
 use super::type_migrate::Constraint::*;
 
 fn conflict_solve(phi: &CSet, g: &FGraph, sigma: &mut Ans) {

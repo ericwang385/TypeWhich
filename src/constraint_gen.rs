@@ -2,9 +2,9 @@ use crate::fgraph::{acyclic, fgraph_union, is_fun, FGraph};
 use crate::parser::inc_metavar;
 use std::boxed::Box;
 use either::Either::{Left, Right};
-use im::{hashset, vector, HashSet};
+use im::{hashset, HashSet};
 use crate::syntax::{Exp, GroundTyp, MetaVar, Typ};
-use super::type_migrate::{Env, CSet, CTyp, Constraint};
+use super::type_migrate::{Env, CSet};
 use super::syntax::Exp::*;
 use super::type_migrate::Constraint::*;
 
@@ -71,7 +71,7 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (MetaVar, CSet, FGraph) {
         },
         BinaryOp(op, e1, e2) => {
             let (t1, t2, ret) = op.typ();
-            let (t3, phi1, mut g1) = constraint_gen(e1, &env);
+            let (t3, phi1, g1) = constraint_gen(e1, &env);
             let (t4, phi2, g2) = constraint_gen(e2, &env);
             let mut phi = phi1.union(phi2);
             let alpha = next_metavar();
@@ -85,14 +85,14 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (MetaVar, CSet, FGraph) {
             (alpha, phi, g)
         },
         Let(x, e1, e2) => {
-            let (t1, phi1, mut g1) = constraint_gen(e1, &env);
+            let (t1, phi1, g1) = constraint_gen(e1, &env);
             let mut env = env.clone();
             env.insert(x.clone(), t1);
             let (t2, phi2, g2) = constraint_gen(e2, &env);
             (t2, phi1.union(phi2), fgraph_union(g1, g2))
         },
         If(cond, e1, e2) => {
-            let (t1, phi1, mut g1) = constraint_gen(cond, &env);
+            let (t1, phi1, g1) = constraint_gen(cond, &env);
             let (t2, phi2, g2) = constraint_gen(e1, &env);
             let (t3, phi3, g3) = constraint_gen(e2, &env);
             let mut phi = phi1.union(phi2).union(phi3);
