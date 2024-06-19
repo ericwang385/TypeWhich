@@ -1,8 +1,9 @@
 use crate::fgraph::{acyclic, fgraph_union, is_fun, FGraph};
 use crate::parser::inc_metavar;
 use std::boxed::Box;
+use std::collections::BTreeSet;
 use either::Either::{Left, Right};
-use im::{hashset, HashSet};
+use im::hashset;
 use crate::syntax::{Exp, GroundTyp, MetaVar, Typ};
 use super::type_migrate::{Env, CSet};
 use super::syntax::Exp::*;
@@ -19,7 +20,8 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (MetaVar, CSet, FGraph) {
             let t = lit.typ();
             let alpha = next_metavar();
             coerce(t.clone(), alpha.to_typ(), exp);
-            let phi = HashSet::unit(Precious(Left(alpha.clone()), Right(t.to_groundtyp().unwrap())));
+            let mut phi = BTreeSet::new();
+            phi.insert(Precious(Left(alpha.clone()), Right(t.to_groundtyp().unwrap())));
             (alpha, phi, Default::default())
         },
         Var(x) => {
@@ -27,7 +29,8 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (MetaVar, CSet, FGraph) {
                 .unwrap_or_else(|| panic!("unbound identifier {}", x));
             let alpha = next_metavar();
             coerce(t.to_typ(), alpha.to_typ(), exp);
-            let phi = HashSet::unit(Precious(Left(alpha.clone()), Left(t.clone())));
+            let mut phi = BTreeSet::new();
+            phi.insert(Precious(Left(alpha.clone()), Left(t.clone())));
             (alpha, phi, Default::default())
         },
         Fun(f, t, body) => {
@@ -46,7 +49,7 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (MetaVar, CSet, FGraph) {
         App(e1, e2) => {
             let (t1, phi1, g1) = constraint_gen(e1, &env);
             let (t2, phi2, g2) = constraint_gen(e2, &env);
-            let mut phi = phi1.union(phi2);
+            let mut phi = phi1.union(&phi2).cloned().collect::<CSet>();
             let mut g = fgraph_union(g1, g2);
             let alpha = next_metavar();
             let beta = next_metavar();
@@ -73,7 +76,7 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (MetaVar, CSet, FGraph) {
             let (t1, t2, ret) = op.typ();
             let (t3, phi1, g1) = constraint_gen(e1, &env);
             let (t4, phi2, g2) = constraint_gen(e2, &env);
-            let mut phi = phi1.union(phi2);
+            let mut phi = phi1.union(&phi2).cloned().collect::<CSet>();
             let alpha = next_metavar();
             let g = fgraph_union(g1, g2);
             coerce(t3.to_typ(), t1.clone(), e1);
@@ -89,13 +92,14 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (MetaVar, CSet, FGraph) {
             let mut env = env.clone();
             env.insert(x.clone(), t1);
             let (t2, phi2, g2) = constraint_gen(e2, &env);
-            (t2, phi1.union(phi2), fgraph_union(g1, g2))
+            let phi = phi1.union(&phi2).cloned().collect::<CSet>();
+            (t2, phi, fgraph_union(g1, g2))
         },
         If(cond, e1, e2) => {
             let (t1, phi1, g1) = constraint_gen(cond, &env);
             let (t2, phi2, g2) = constraint_gen(e1, &env);
             let (t3, phi3, g3) = constraint_gen(e2, &env);
-            let mut phi = phi1.union(phi2).union(phi3);
+            let mut phi = phi1.union(&phi2).cloned().collect::<CSet>().union(&phi3).cloned().collect::<CSet>();
             let g = fgraph_union(g1, fgraph_union(g2, g3));
             let alpha = next_metavar();
             coerce(t1.to_typ(), Typ::Bool, cond);
@@ -194,7 +198,7 @@ fn constraint_rewrite(phi: &mut CSet, g: &mut FGraph) {
         }
     }
 
-    let phi_diff = iterator.difference(phi.clone());
+    let phi_diff = iterator.difference(&phi).cloned().collect::<CSet>();
     
     if !phi_diff.is_empty() {
         constraint_rewrite(phi, g);

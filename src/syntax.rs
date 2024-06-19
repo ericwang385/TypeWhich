@@ -2,7 +2,7 @@ use crate::parser::{next_metavar};
 
 /// Several ground types are presently missing. But, these are all we need
 /// for the non-Grift benchmarks.
-#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash, PartialOrd, Ord)]
 pub enum GroundTyp {
     Int,
     Bool,
@@ -24,7 +24,7 @@ pub enum Any {
     Base,
 }
 
-#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash, PartialOrd, Ord)]
 pub enum MetaVar {
     Atom(u32),
     Arr(Box<MetaVar>, Box<MetaVar>),

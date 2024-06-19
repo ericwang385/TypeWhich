@@ -148,7 +148,7 @@ pub fn csolve(phi: &CSet, g: &FGraph) -> Ans {
         conflict_solve(phi, g, &mut sigma);
         try_assign(phi, &mut sigma);
         let sigma_diff = orig_sigma.difference(sigma.clone());
-        let phi_diff = orig_phi.difference(phi.clone());
+        let phi_diff = orig_phi.difference(&phi).cloned().collect::<CSet>();
         if sigma_diff.is_empty() && phi_diff.is_empty() {
             return sigma;
         }

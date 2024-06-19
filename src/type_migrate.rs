@@ -7,15 +7,16 @@ use super::syntax::{Exp, Typ, MetaVar};
 use super::syntax::Exp::*;
 use super::constraint_gen::cgen;
 use std::boxed::Box;
+use std::collections::BTreeSet;
 
-#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash, PartialOrd, Ord)]
 pub enum Constraint {
     Consistent(CTyp, CTyp),
     Precious(CTyp, CTyp)
 }
 pub type Env = HashMap<String, MetaVar>;
 pub type CTyp = Either<MetaVar, GroundTyp>;
-pub type CSet = HashSet<Constraint>;
+pub type CSet = BTreeSet<Constraint>;
 pub type ATyp = Either<Any, GroundTyp>;
 pub type Ans = HashMap<MetaVar, ATyp>;
 
@@ -81,7 +82,6 @@ fn annotate(sigma: &Ans, exp: &mut Exp, g: &FGraph) {
     }
 }
 
-// #[cfg(test)]
 mod test {
     use crate::constraint_gen::cgen;
     use crate::constraint_solve::csolve;
