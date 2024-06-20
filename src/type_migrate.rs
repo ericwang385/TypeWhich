@@ -94,13 +94,13 @@ mod test {
         let mut exp = parse(orig).unwrap();
         exp.fresh_types();
         let (phi, g) = cgen(&mut exp, &Default::default());
-        println!("Constraint: {:?}", phi);
+        // println!("Constraint: {:?}", phi);
         let sigma = csolve(&phi, &g);
-        println!("Answer Set:\n{:?}", sigma);
-        println!("Before Annotation:\n{:?}\n", exp);
-        annotate(&sigma, &mut exp, &g);
-        println!("After Annotation \n {:?} \n", exp);
-        println!("After Annotation Pretty:\n{}\n", exp);
+        // println!("Answer Set:\n{:?}", sigma);
+        // println!("Before Annotation:\n{:?}\n", exp);
+        // annotate(&sigma, &mut exp, &g);
+        // println!("After Annotation \n {:?} \n", exp);
+        // println!("After Annotation Pretty:\n{}\n", exp);
         exp
     }
 
