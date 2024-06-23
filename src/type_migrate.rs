@@ -24,49 +24,55 @@ pub type Ans = HashMap<MetaVar, ATyp>;
 pub fn type_infer(mut exp: Exp, env: &Env) -> Result<Exp, String> {
     let (phi, g) = cgen(&mut exp, env);
     let sigma = csolve(&phi, &g);
-    annotate(&sigma, &mut exp, &g);
+    annotate(&sigma, &mut exp, &g, false);
     Ok(exp)
 }
 
-fn annotate_metavar(sigma: &Ans, t: &MetaVar, g: &FGraph) -> Typ {
+fn annotate_metavar(sigma: &Ans, t: &MetaVar, g: &FGraph, flag: bool) -> Typ {
     match sigma.get(t) {
         Some(Left(_)) => Typ::Any,
-        Some(Right(t)) => t.to_typ(),
+        Some(Right(t)) => {
+            if flag {
+                Typ::Any
+            } else {
+                t.to_typ()
+            }
+        },
         None if is_fun(t, g).is_some() => {
-            let dom = annotate_metavar(sigma, &t.dom(), g);
-            let cod = annotate_metavar(sigma, &t.cod(), g);
+            let dom = annotate_metavar(sigma, &t.dom(), g, flag);
+            let cod = annotate_metavar(sigma, &t.cod(), g, flag);
             Typ::Arr(Box::new(dom), Box::new(cod))
         }
         None => Typ::Any 
     }
 }
 
-fn annotate_typ(sigma: &Ans, t: &mut Typ, g: &FGraph) {
+fn annotate_typ(sigma: &Ans, t: &mut Typ, g: &FGraph, flag: bool) {
     match t {
-        Typ::Metavar(i) => *t = annotate_metavar(sigma, &MetaVar::Atom(*i), g),
+        Typ::Metavar(i) => *t = annotate_metavar(sigma, &MetaVar::Atom(*i), g, flag),
         Typ::Arr(t1, t2) | Typ::Pair(t1, t2) => {
-            annotate_typ(sigma, t1, g);
-            annotate_typ(sigma, t2, g);
+            annotate_typ(sigma, t1, g, flag);
+            annotate_typ(sigma, t2, g, false);
         }
         Typ::List(t) | Typ::Box(t) | Typ::Vect(t) => {
-            annotate_typ(sigma, t, g);
+            annotate_typ(sigma, t, g, false);
         }
         Typ::Unit | Typ::Int | Typ::Float | Typ::Bool | Typ::Str | Typ::Char | Typ::Any => (),
     }
 }
 
-fn annotate(sigma: &Ans, exp: &mut Exp, g: &FGraph) {
+fn annotate(sigma: &Ans, exp: &mut Exp, g: &FGraph, flag: bool) {
     match &mut *exp {
         PrimCoerce(..) => panic!("PrimCoerce should not appear in source"),
         Lit(..) | Var(..) => {}
         Exp::Fun(_, t, e) | Exp::Fix(_, t, e) | Exp::Ann(e, t) => {
-            annotate_typ(sigma, t, g);
-            annotate(sigma, e, g);
+            annotate_typ(sigma, t, g, flag);
+            annotate(sigma, e, g, false);
         }
         Exp::Coerce(t1, t2, e) => {
-            annotate(sigma, e, g);
-            annotate_typ(sigma, t1, g);
-            annotate_typ(sigma, t2, g);
+            annotate(sigma, e, g, flag);
+            annotate_typ(sigma, t1, g, false);
+            annotate_typ(sigma, t2, g, false);
             if t1 == t2 {
                 *exp = e.take();
             }
@@ -75,8 +81,8 @@ fn annotate(sigma: &Ans, exp: &mut Exp, g: &FGraph) {
         | Exp::Let(_, e1, e2)
         | Exp::BinaryOp(_, e1, e2)
         | Exp::AddOverload(e1, e2) => {
-            annotate(sigma, e1, g);
-            annotate(sigma, e2, g);
+            annotate(sigma, e1, g, false);
+            annotate(sigma, e2, g, false);
         }
         _ => {}
     }
@@ -98,7 +104,7 @@ mod test {
         let sigma = csolve(&phi, &g);
         println!("Answer Set:\n{:?}", sigma);
         println!("Before Annotation:\n{:?}\n", exp);
-        annotate(&sigma, &mut exp, &g);
+        annotate(&sigma, &mut exp, &g, true);
         println!("After Annotation \n {:?} \n", exp);
         println!("After Annotation Pretty:\n{}\n", exp);
         exp
@@ -116,7 +122,7 @@ mod test {
 
     #[test]
     fn bool_app() {
-        test_migrate("(fun x . x + 1) true");
+        test_migrate("(fun f . f (f true))");
     }
 
     #[test]
@@ -133,14 +139,10 @@ mod test {
     fn precision() {
        test_migrate("(fun f. f true + (fun g.g 5) f) (fun x.5)");
     }
-    #[test]
-    fn rank2_poly() {
-        test_migrate("(fun i.(fun a. (i true)) (i 5) ) (fun x.x)");
-    }
 
     #[test]
-    fn add_two_app() {
-        test_migrate("fun x . x 4 + x true");
+    fn if_tag() {
+        test_migrate("(fun tag. fun x. if tag then x + 1 else (if x then 1 else 0))");
     }
 
     #[test]

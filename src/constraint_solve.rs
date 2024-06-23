@@ -1,15 +1,15 @@
 use either::Either::{Left, Right};
 use im::HashMap;
 use crate::fgraph::{is_fun, FGraph};
-use crate::syntax::Any;
+use crate::syntax::{Any, MetaVar};
 use crate::type_migrate::ATyp;
 
 use super::type_migrate::{Ans, CSet};
 use super::type_migrate::Constraint::*;
 
-fn conflict_solve(phi: &CSet, g: &FGraph, sigma: &mut Ans, mut flag: bool) -> bool {
+fn conflict_solve(phi: &CSet, g: &FGraph, sigma: &mut Ans) -> bool {
     let iterator = phi.clone();
-    let orig_sigma = sigma.clone();
+    let mut flag = false;
     for c1 in iterator.iter() {
         match c1 {
             //CBase
@@ -27,13 +27,13 @@ fn conflict_solve(phi: &CSet, g: &FGraph, sigma: &mut Ans, mut flag: bool) -> bo
             //CPrecious & CDyn
             Precious(Left(t1), Left(t2)) => {
                 match (sigma.get(t1), sigma.get(t2)) {
-                    (Some(Right(t3)), Some(Right(t4))) => {
-                        if t3 != t4 {
-                            sigma.insert(t1.clone(), Left(Any::Base));
-                            flag = true;
-                        }
+                    (Some(Right(t3)), Some(Right(t4)))
+                    if t3 != t4 => {
+                        sigma.insert(t1.clone(), Left(Any::Base));
+                        flag = true;
                     }
-                    (_, Some(Left(_))) => {
+                    (None, Some(Left(_)))
+                    | (Some(Right(_)), Some(Left(_))) => {
                         sigma.insert(t1.clone(), Left(Any::Base));
                         flag = true;
                     }
@@ -68,12 +68,10 @@ fn conflict_solve(phi: &CSet, g: &FGraph, sigma: &mut Ans, mut flag: bool) -> bo
             _ => {}
         }
     }
-    
-    let diff = orig_sigma.difference(sigma.clone());
 
-    if !diff.is_empty() {
+    if flag {
         //CFunBase & CFunDyn
-        for (i, t) in diff.iter() {
+        for (i, t) in sigma.clone().iter() {
             match is_fun(i, g) {
                 Some(_) => {
                     sigma.insert(i.dom(), Left(Any::Base));
@@ -85,10 +83,12 @@ fn conflict_solve(phi: &CSet, g: &FGraph, sigma: &mut Ans, mut flag: bool) -> bo
                 _ => {}
             }
         }
-        conflict_solve(phi, g, sigma, flag);
+        conflict_solve(phi, g, sigma);
+        return true;
     }
     flag
 }
+
 fn consistent(t1: &ATyp, t2: &ATyp) -> bool {
     match (t1, t2) {
         (_, Left(_)) | (Left(_), _) => true,
@@ -98,9 +98,10 @@ fn consistent(t1: &ATyp, t2: &ATyp) -> bool {
     }
 }
 
-fn try_assign(phi: &CSet, sigma: &mut Ans, mut flag: bool) -> bool {
+fn try_assign(phi: &CSet, sigma: &mut Ans) -> bool {
     let iterator = phi.clone();
     let orig = sigma.clone();
+    let mut flag = false;
     for c1 in iterator.iter() {
         match c1 {
             // a < G => a = G
@@ -126,70 +127,86 @@ fn try_assign(phi: &CSet, sigma: &mut Ans, mut flag: bool) -> bool {
     flag
 }
 
-// fn commit_assign(phi: &CSet, sigma: &mut Ans) -> bool {
-//     let mut counter = 1000;
-//     let mut key = (MetaVar::Atom(0), MetaVar::Atom(0));
-//     for c1 in phi.iter() {
-//         match c1 {
-//             Precious(Left(t1), Left(t2)) 
-//             if !sigma.contains_key(t2) && 
-//             sigma.get(t1).is_some_and(|x| x.is_right()) => {
-//                 let mut inner_counter = 0;
-//                 for c2 in phi.iter() {
-//                     match c2 {
-//                         Precious(Left(t3), Left(t4))
-//                         if t4 == t2 && !sigma.contains_key(t3) => {
-//                             inner_counter += 1;
-//                         }
-//                         _ => {}
-//                     }
-//                 }
-//                 if inner_counter < counter {
-//                     counter = inner_counter;
-//                     key = (t2.clone(), t1.clone());
-//                 }
-//             }
-//             _ => {}
-//         }
-//     }
-//     if counter != 1000 {
-//         sigma.insert(key.0, sigma.get(&key.1).unwrap().clone());
-//         true
-//     } else {
-//         false
-//     }
-// }
-
 fn commit_assign(phi: &CSet, sigma: &mut Ans) -> bool {
+    let mut counter = 1000;
+    let mut key = (MetaVar::Atom(0), MetaVar::Atom(0));
     for c1 in phi.iter() {
         match c1 {
             Precious(Left(t1), Left(t2)) 
             if !sigma.contains_key(t2) && 
             sigma.get(t1).is_some_and(|x| x.is_right()) => {
-                sigma.insert(t2.clone(), sigma.get(t1).unwrap().clone());
-                return true;
+                let mut inner_counter = 0;
+                for c2 in phi.iter() {
+                    match c2 {
+                        Precious(Left(t3), Left(t4))
+                        if t4 == t2 && !sigma.contains_key(t3) => {
+                            inner_counter += 1;
+                        }
+                        _ => {}
+                    }
+                }
+                if inner_counter < counter {
+                    counter = inner_counter;
+                    key = (t2.clone(), t1.clone());
+                }
             }
             _ => {}
         }
     }
-    false
-}
-
-fn _csolve(phi: &CSet, g: &FGraph, sigma: &mut Ans) {
-    let b1 = conflict_solve(phi, g, sigma, false);
-    let b2 = try_assign(phi, sigma, false);
-    if !(b1 || b2) {
-        let b3 = commit_assign(phi, sigma);
-        if !b3 {
-            return;
-        }
+    if counter != 1000 {
+        sigma.insert(key.0, sigma.get(&key.1).unwrap().clone());
+        true
     } else {
-        _csolve(phi, g, sigma)
+        false
     }
 }
 
+// fn commit_assign(phi: &CSet, sigma: &mut Ans) -> bool {
+//     for c1 in phi.iter() {
+//         match c1 {
+//             Precious(Left(t1), Left(t2)) 
+//             if !sigma.contains_key(t2) && 
+//             sigma.get(t1).is_some_and(|x| x.is_right()) => {
+//                 sigma.insert(t2.clone(), sigma.get(t1).unwrap().clone());
+//                 return true;
+//             }
+//             _ => {}
+//         }
+//     }
+//     false
+// }
+
 pub fn csolve(phi: &CSet, g: &FGraph) -> Ans {
-    let mut sigma : Ans = Default::default();
-    _csolve(phi, g, &mut sigma);
-    sigma
+    let mut sigma: Ans = Default::default();
+    loop{
+        let b1 = conflict_solve(phi, g, &mut sigma);
+        let b2 = try_assign(phi, &mut sigma);
+        if !(b1 || b2) {
+            let b3 = commit_assign(phi, &mut sigma);
+            if !b3 {
+                return sigma;
+            }
+        }
+    }
 }
+
+// fn _csolve(phi: &CSet, g: &FGraph, sigma: &mut Ans) {
+//     let b1 = conflict_solve(phi, g, sigma);
+//     let b2 = try_assign(phi, sigma);
+//     if !(b1 || b2) {
+//         let b3 = commit_assign(phi, sigma);
+//         if b3 {
+//             _csolve(phi, g, sigma)
+//         } else {
+//             return;
+//         }
+//     } else {
+//         _csolve(phi, g, sigma)
+//     }
+// }
+
+// pub fn csolve(phi: &CSet, g: &FGraph) -> Ans {
+//     let mut sigma : Ans = Default::default();
+//     _csolve(phi, g, &mut sigma);
+//     sigma
+// }

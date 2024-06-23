@@ -147,38 +147,21 @@ fn constraint_rewrite(phi: &mut CSet, g: &mut FGraph) {
                     _ => {}
                 }
                 
-                // a < b & b < G => a < G
-                // a < b & b < c => a < c
-                // ConsistentLR
+                // a < b & a < c => b ~ c
+                // Consistent
                 for c2 in iterator.iter() {
                     match c2 {
                         Precious(Left(t3), Right(t4)) => {
                             if t1 == t3 {
                                 phi.insert(Consistent(Left(t2.clone()), Right(t4.clone())));
                             } 
-                            // else if t2 == t3 {
-                            //     phi.insert(Precious(Left(t1.clone()), Right(t4.clone())));
-                            // }
                         }
                         Precious(Left(t3), Left(t4)) 
                         if !t4.is_arr() && t2 != t4 => {
                             if t1 == t3 {
                                 phi.insert(Consistent(Left(t2.clone()), Left(t4.clone())));
                             } 
-                            // else if t2 == t3 {
-                            //     phi.insert(Precious(Left(t1.clone()), Left(t4.clone())));
-                            // }
-                            
                         }
-                        // Precious(Right(t3), Left(t4))
-                        // if t2 == t4 => {
-                        //     phi.insert(Consistent(Left(t1.clone()), Right(t3.clone())));
-                        // }
-                        // Precious(Left(t3), Left(t4))
-                        // if !t3.is_arr() && t2 == t4 && t1 != t3 => {
-                        //     phi.insert(Consistent(Left(t1.clone()), Left(t3.clone())));
-                        //     phi.insert(Consistent(Left(t3.clone()), Left(t1.clone())));
-                        // }
                         _ => {}
                     }
                 }
@@ -198,7 +181,7 @@ fn constraint_rewrite(phi: &mut CSet, g: &mut FGraph) {
         }
     }
 
-    let phi_diff = iterator.difference(&phi).cloned().collect::<CSet>();
+    let phi_diff = phi.difference(&iterator).cloned().collect::<CSet>();
     
     if !phi_diff.is_empty() {
         constraint_rewrite(phi, g);
