@@ -1,8 +1,7 @@
 use either::Either::{Left, Right};
 use im::HashMap;
 use crate::fgraph::{is_fun, FGraph};
-use crate::parser::curr_metavar;
-use crate::syntax::{Any, GroundTyp, MetaVar};
+use crate::syntax::Any;
 use crate::type_migrate::ATyp;
 
 use super::type_migrate::{Ans, CSet};
