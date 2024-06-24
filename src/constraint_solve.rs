@@ -127,54 +127,54 @@ fn try_assign(phi: &CSet, sigma: &mut Ans) -> bool {
     flag
 }
 
-fn commit_assign(phi: &CSet, sigma: &mut Ans) -> bool {
-    let mut counter = 1000;
-    let mut key = (MetaVar::Atom(0), MetaVar::Atom(0));
-    for c1 in phi.iter() {
-        match c1 {
-            Precious(Left(t1), Left(t2)) 
-            if !sigma.contains_key(t2) && 
-            sigma.get(t1).is_some_and(|x| x.is_right()) => {
-                let mut inner_counter = 0;
-                for c2 in phi.iter() {
-                    match c2 {
-                        Precious(Left(t3), Left(t4))
-                        if t4 == t2 && !sigma.contains_key(t3) => {
-                            inner_counter += 1;
-                        }
-                        _ => {}
-                    }
-                }
-                if inner_counter < counter {
-                    counter = inner_counter;
-                    key = (t2.clone(), t1.clone());
-                }
-            }
-            _ => {}
-        }
-    }
-    if counter != 1000 {
-        sigma.insert(key.0, sigma.get(&key.1).unwrap().clone());
-        true
-    } else {
-        false
-    }
-}
-
 // fn commit_assign(phi: &CSet, sigma: &mut Ans) -> bool {
+//     let mut counter = 1000;
+//     let mut key = (MetaVar::Atom(0), MetaVar::Atom(0));
 //     for c1 in phi.iter() {
 //         match c1 {
 //             Precious(Left(t1), Left(t2)) 
 //             if !sigma.contains_key(t2) && 
 //             sigma.get(t1).is_some_and(|x| x.is_right()) => {
-//                 sigma.insert(t2.clone(), sigma.get(t1).unwrap().clone());
-//                 return true;
+//                 let mut inner_counter = 0;
+//                 for c2 in phi.iter() {
+//                     match c2 {
+//                         Precious(Left(t3), Left(t4))
+//                         if t4 == t2 && !sigma.contains_key(t3) => {
+//                             inner_counter += 1;
+//                         }
+//                         _ => {}
+//                     }
+//                 }
+//                 if inner_counter < counter {
+//                     counter = inner_counter;
+//                     key = (t2.clone(), t1.clone());
+//                 }
 //             }
 //             _ => {}
 //         }
 //     }
-//     false
+//     if counter != 1000 {
+//         sigma.insert(key.0, sigma.get(&key.1).unwrap().clone());
+//         true
+//     } else {
+//         false
+//     }
 // }
+
+fn commit_assign(phi: &CSet, sigma: &mut Ans) -> bool {
+    for c1 in phi.iter() {
+        match c1 {
+            Precious(Left(t1), Left(t2)) 
+            if !sigma.contains_key(t2) && 
+            sigma.get(t1).is_some_and(|x| x.is_right()) => {
+                sigma.insert(t2.clone(), sigma.get(t1).unwrap().clone());
+                return true;
+            }
+            _ => {}
+        }
+    }
+    false
+}
 
 pub fn csolve(phi: &CSet, g: &FGraph) -> Ans {
     let mut sigma: Ans = Default::default();

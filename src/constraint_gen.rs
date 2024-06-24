@@ -166,17 +166,17 @@ fn constraint_rewrite(phi: &mut CSet, g: &mut FGraph) {
                     }
                 }
             }
-            // Consistent(t1, t2) => {
-            //     for c2 in iterator.iter() {
-            //         match c2 {
-            //             Consistent(t3, t4) 
-            //             if (t2 == t3 && t1 != t4) => {
-            //                 phi.insert(Consistent(t1.clone(), t4.clone()));
-            //             }
-            //             _ => {}
-            //         }
-            //     }
-            // }
+            Consistent(t1, t2) => {
+                for c2 in iterator.iter() {
+                    match c2 {
+                        Consistent(t3, t4) 
+                        if (t2 == t3 && t1 != t4) => {
+                            phi.insert(Consistent(t1.clone(), t4.clone()));
+                        }
+                        _ => {}
+                    }
+                }
+            }
             _ => {}
         }
     }
