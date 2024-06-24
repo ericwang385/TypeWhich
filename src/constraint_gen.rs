@@ -154,12 +154,14 @@ fn constraint_rewrite(phi: &mut CSet, g: &mut FGraph) {
                         Precious(Left(t3), Right(t4)) => {
                             if t1 == t3 {
                                 phi.insert(Consistent(Left(t2.clone()), Right(t4.clone())));
+                                phi.insert(Consistent(Right(t4.clone()), Left(t2.clone())));
                             } 
                         }
                         Precious(Left(t3), Left(t4)) 
                         if !t4.is_arr() && t2 != t4 => {
                             if t1 == t3 {
                                 phi.insert(Consistent(Left(t2.clone()), Left(t4.clone())));
+                                phi.insert(Consistent(Left(t4.clone()), Left(t2.clone())));
                             } 
                         }
                         _ => {}
