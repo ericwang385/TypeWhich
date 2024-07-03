@@ -24,7 +24,7 @@ pub type Ans = HashMap<MetaVar, ATyp>;
 pub fn type_infer(mut exp: Exp, env: &Env) -> Result<Exp, String> {
     let (phi, g) = cgen(&mut exp, env);
     let sigma = csolve(&phi, &g);
-    annotate(&sigma, &mut exp, &g, true);
+    annotate(&sigma, &mut exp, &g, false);
     Ok(exp)
 }
 
