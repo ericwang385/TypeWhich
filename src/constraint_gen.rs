@@ -162,6 +162,8 @@ fn constraint_rewrite(phi: &mut CSet, g: &mut FGraph) {
                             if t1 == t3 {
                                 phi.insert(Consistent(Left(t2.clone()), Left(t4.clone())));
                                 // phi.insert(Consistent(Left(t4.clone()), Left(t2.clone())));
+                            } else if t2 == t4 {
+                                phi.insert(Consistent(Left(t1.clone()), Left(t4.clone())));
                             }
                         }
                         _ => {}

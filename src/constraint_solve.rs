@@ -179,8 +179,8 @@ fn commit_assign(phi: &CSet, sigma: &mut Ans) -> bool {
 pub fn csolve(phi: &CSet, g: &FGraph) -> Ans {
     let mut sigma: Ans = Default::default();
     loop{
-        let b1 = conflict_solve(phi, g, &mut sigma);
-        let b2 = try_assign(phi, &mut sigma);
+        let b1 = try_assign(phi, &mut sigma);
+        let b2 = conflict_solve(phi, g, &mut sigma);
         if !(b1 || b2) {
             let b3 = commit_assign(phi, &mut sigma);
             if !b3 {
