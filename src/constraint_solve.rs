@@ -183,6 +183,7 @@ pub fn csolve(phi: &CSet, g: &FGraph) -> Ans {
         let b2 = conflict_solve(phi, g, &mut sigma);
         if !(b1 || b2) {
             let b3 = commit_assign(phi, &mut sigma);
+            conflict_solve(phi, g, &mut sigma);
             if !b3 {
                 return sigma;
             }
