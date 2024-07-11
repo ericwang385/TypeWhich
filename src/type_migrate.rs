@@ -122,7 +122,7 @@ mod test {
 
     #[test]
     fn bool_app() {
-        test_migrate("(fun f . f (f true))");
+        test_migrate("(fun x.(x 5) + x) 5");
     }
 
     #[test]
