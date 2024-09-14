@@ -108,7 +108,7 @@ mod test {
         exp.fresh_types();
         let (phi, g) = cgen(&mut exp, &Default::default());
         println!("Constraint: {:?}", phi);
-        let sigma = csolve(&phi, &g, &exp, false);
+        let sigma = csolve(&phi, &g, &exp, true);
         println!("Answer Set:\n{:?}", sigma);
         println!("Before Annotation:\n{:?}\n", exp);
         annotate(&sigma, &mut exp, &g, true);
