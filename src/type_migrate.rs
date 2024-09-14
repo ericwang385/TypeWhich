@@ -22,21 +22,23 @@ pub type Ans = HashMap<MetaVar, ATyp>;
 
 // Entry Point
 pub fn type_infer(mut exp: Exp, env: &Env) -> Result<Exp, String> {
+    let cmode = true;
     let (phi, g) = cgen(&mut exp, env);
-    let sigma = csolve(&phi, &g);
-    annotate(&sigma, &mut exp, &g, true);
+    let mut sigma = csolve(&phi, &g, &exp, cmode);
+    annotate(&mut sigma, &mut exp, &g, cmode);
     Ok(exp)
 }
 
 fn annotate_metavar(sigma: &Ans, t: &MetaVar, g: &FGraph, flag: bool) -> Typ {
     match sigma.get(t) {
         Some(Left(_)) => Typ::Any,
-        Some(Right(t)) => {
-            if flag {
-                Typ::Any
-            } else {
-                t.to_typ()
-            }
+        Some(Right(g)) => {
+            // if flag {
+            //     Typ::Any
+            // } else {
+            //     g.to_typ()
+            // }
+            g.to_typ()
         },
         None if is_fun(t, g).is_some() => {
             let dom = annotate_metavar(sigma, &t.dom(), g, flag);
@@ -67,7 +69,7 @@ fn annotate(sigma: &Ans, exp: &mut Exp, g: &FGraph, flag: bool) {
         Lit(..) | Var(..) => {}
         Exp::Fun(_, t, e) | Exp::Fix(_, t, e) | Exp::Ann(e, t) => {
             annotate_typ(sigma, t, g, flag);
-            annotate(sigma, e, g, false);
+            annotate(sigma, e, g, flag);
         }
         Exp::Coerce(t1, t2, e) => {
             annotate(sigma, e, g, flag);
@@ -83,6 +85,11 @@ fn annotate(sigma: &Ans, exp: &mut Exp, g: &FGraph, flag: bool) {
         | Exp::AddOverload(e1, e2) => {
             annotate(sigma, e1, g, false);
             annotate(sigma, e2, g, false);
+        }
+        Exp::If(e1, e2, e3) => {
+            annotate(sigma, e1, g, false);
+            annotate(sigma, e2, g, false);
+            annotate(sigma, e3, g, false);
         }
         _ => {}
     }
@@ -101,7 +108,7 @@ mod test {
         exp.fresh_types();
         let (phi, g) = cgen(&mut exp, &Default::default());
         println!("Constraint: {:?}", phi);
-        let sigma = csolve(&phi, &g);
+        let sigma = csolve(&phi, &g, &exp, true);
         println!("Answer Set:\n{:?}", sigma);
         println!("Before Annotation:\n{:?}\n", exp);
         annotate(&sigma, &mut exp, &g, true);
@@ -117,7 +124,7 @@ mod test {
 
     #[test]
     fn simple_arith() {
-        test_migrate("(fun x . x + 1) 10");
+        test_migrate("(fun x. x 5 + x) 5");
     }
 
     #[test]
@@ -142,7 +149,12 @@ mod test {
 
     #[test]
     fn if_tag() {
-        test_migrate("(fun tag. fun x. if tag then x + 1 else (if x then 1 else 0))");
+        test_migrate("fun tag. fun x. if tag then x + 1 else 2");
+    }
+
+    #[test]
+    fn if_tag_eta() {
+        test_migrate("(fun u. fun y. ((fun tag. fun x. if tag then x + 1 else 2) u) y)");
     }
 
     #[test]

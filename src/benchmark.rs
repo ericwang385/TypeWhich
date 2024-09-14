@@ -141,7 +141,7 @@ fn eval(code: String, num_stars: Option<&mut usize>) -> (Option<bool>, usize) {
             }
             // eprintln!("Ast: {:?}", ast);
             super::insert_coercions::insert_coercions(&mut ast).expect("coercion insertion failed");
-            eprintln!("Ast with coercion: {:?}",ast);
+            // eprintln!("Ast with coercion: {:?}",ast);
             let num_dommed = count_doomed(&ast);
             (Some(super::eval::eval(ast).is_ok()), num_dommed)
         }

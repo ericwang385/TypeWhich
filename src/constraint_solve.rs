@@ -1,7 +1,7 @@
 use either::Either::{Left, Right};
 use im::HashMap;
 use crate::fgraph::{is_fun, FGraph};
-use crate::syntax::{Any, MetaVar};
+use crate::syntax::{Any, Exp, MetaVar, Typ};
 use crate::type_migrate::ATyp;
 
 use super::type_migrate::{Ans, CSet};
@@ -176,7 +176,42 @@ fn commit_assign(phi: &CSet, sigma: &mut Ans) -> bool {
     false
 }
 
-pub fn csolve(phi: &CSet, g: &FGraph) -> Ans {
+fn completion_typ(sigma: &mut Ans, t: &Typ) {
+    match t {
+        Typ::Metavar(i) => {
+            sigma.insert(MetaVar::Atom(*i), Left(Any::Base));
+        }
+        Typ::Arr(t1, t2) | Typ::Pair(t1, t2) => {
+            completion_typ(sigma, t1);
+        }
+        _ => ()
+    }
+}
+
+fn completion(sigma: &mut Ans, exp: &Exp, g: &FGraph) {
+    match &exp {
+        Exp::Fun(_, t, e) => {
+            completion_typ(sigma, t);
+            completion(sigma, e, g);
+        }
+        Exp::Coerce(t1, t2, e) => {
+            completion(sigma, e, g);
+        }
+        _ => {}
+    }
+    // for (k, v) in g.iter() {
+    //     for t in v.iter() {
+    //         match sigma.get(t) {
+    //             None => {
+    //                 todo!()
+    //             }
+    //             Some(_) => {}
+    //         }
+    //     }
+    // }
+}
+
+pub fn csolve(phi: &CSet, g: &FGraph, exp: &Exp, cmode: bool) -> Ans {
     let mut sigma: Ans = Default::default();
     loop{
         let b1 = try_assign(phi, &mut sigma);
@@ -185,29 +220,12 @@ pub fn csolve(phi: &CSet, g: &FGraph) -> Ans {
             let b3 = commit_assign(phi, &mut sigma);
             conflict_solve(phi, g, &mut sigma);
             if !b3 {
+                if cmode {
+                    completion(&mut sigma, exp, g);
+                    conflict_solve(phi, g, &mut sigma);
+                }
                 return sigma;
             }
         }
     }
 }
-
-// fn _csolve(phi: &CSet, g: &FGraph, sigma: &mut Ans) {
-//     let b1 = conflict_solve(phi, g, sigma);
-//     let b2 = try_assign(phi, sigma);
-//     if !(b1 || b2) {
-//         let b3 = commit_assign(phi, sigma);
-//         if b3 {
-//             _csolve(phi, g, sigma)
-//         } else {
-//             return;
-//         }
-//     } else {
-//         _csolve(phi, g, sigma)
-//     }
-// }
-
-// pub fn csolve(phi: &CSet, g: &FGraph) -> Ans {
-//     let mut sigma : Ans = Default::default();
-//     _csolve(phi, g, &mut sigma);
-//     sigma
-// }
