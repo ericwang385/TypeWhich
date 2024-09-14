@@ -4,5 +4,6 @@
 *.out
 /bin
 /test.results.yaml
+/test.cmode.results.yaml
 /.vscode
 /test.yaml

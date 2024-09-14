@@ -22,7 +22,7 @@ pub type Ans = HashMap<MetaVar, ATyp>;
 
 // Entry Point
 pub fn type_infer(mut exp: Exp, env: &Env) -> Result<Exp, String> {
-    let cmode = true;
+    let cmode = false;
     let (phi, g) = cgen(&mut exp, env);
     let mut sigma = csolve(&phi, &g, &exp, cmode);
     annotate(&mut sigma, &mut exp, &g, cmode);
@@ -108,7 +108,7 @@ mod test {
         exp.fresh_types();
         let (phi, g) = cgen(&mut exp, &Default::default());
         println!("Constraint: {:?}", phi);
-        let sigma = csolve(&phi, &g, &exp, true);
+        let sigma = csolve(&phi, &g, &exp, false);
         println!("Answer Set:\n{:?}", sigma);
         println!("Before Annotation:\n{:?}\n", exp);
         annotate(&sigma, &mut exp, &g, true);

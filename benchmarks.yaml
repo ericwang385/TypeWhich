@@ -143,3 +143,9 @@ benchmarks:
           m (fun x:any . x) 
             (fun m:any . fun n:any . e m (e n)) 
             (fun m:any -> any . fun v:any. e (m v)))
+  - file: other-examples/if-tag-restrict.gtlc
+    context: |
+      (HOLE) false true
+  - file: other-examples/if-tag-restrict-eta.gtlc
+    context: |
+      (HOLE) false true
