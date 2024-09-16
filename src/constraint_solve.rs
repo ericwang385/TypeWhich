@@ -181,43 +181,21 @@ fn completion_typ(sigma: &mut Ans, t: &Typ) {
         Typ::Metavar(i) => {
             sigma.insert(MetaVar::Atom(*i), Left(Any::Base));
         }
-        Typ::Arr(t1, t2) | Typ::Pair(t1, t2) => {
+        Typ::Arr(t1, t2) => {
             completion_typ(sigma, t1);
         }
         _ => ()
     }
 }
 
-fn completion(sigma: &mut Ans, exp: &Exp, g: &FGraph, relax_var: &mut HashSet<String>) {
+fn completion(sigma: &mut Ans, exp: &Exp, g: &FGraph) {
     match &exp {
         Exp::Fun(var, t, e) => {
             completion_typ(sigma, t);
-            relax_var.insert(var.clone());
-            completion(sigma, e, g, relax_var);
+            completion(sigma, e, g);
         }
         Exp::Coerce(_, _, e) => {
-            completion(sigma, e, g, relax_var);
-        }
-        Exp::App(e1, e2) => {
-            match *e2.clone() {
-                Exp::Coerce(_,_, e) => {
-                    match *e {
-                        Exp::Coerce(_,t, ee) => {
-                            match *ee {
-                                Exp::Var(x) => {
-                                    if relax_var.contains(&x) {
-                                        completion(sigma, e1, g, relax_var);
-                                        completion_typ(sigma, &t);
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                _ => {}
-            }
+            completion(sigma, e, g);
         }
         _ => {}
     }
@@ -243,8 +221,7 @@ pub fn csolve(phi: &CSet, g: &FGraph, exp: &Exp, cmode: bool) -> Ans {
             conflict_solve(phi, g, &mut sigma);
             if !b3 {
                 if cmode {
-                    let mut relax_var : HashSet<String> = Default::default();
-                    completion(&mut sigma, exp, g, &mut relax_var);
+                    completion(&mut sigma, exp, g);
                     conflict_solve(phi, g, &mut sigma);
                 }
                 return sigma;

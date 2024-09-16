@@ -22,7 +22,7 @@ pub type Ans = HashMap<MetaVar, ATyp>;
 
 // Entry Point
 pub fn type_infer(mut exp: Exp, env: &Env) -> Result<Exp, String> {
-    let cmode = false;
+    let cmode = true;
     let (phi, g) = cgen(&mut exp, env);
     let mut sigma = csolve(&phi, &g, &exp, cmode);
     annotate(&mut sigma, &mut exp, &g, cmode);
