@@ -41,8 +41,10 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (MetaVar, CSet, FGraph) {
             let (t2, mut phi, mut g) = constraint_gen(body, &env);
             let funt = MetaVar::Arr(Box::new(t1.clone()), Box::new(t2.clone()));
             coerce(funt.to_typ(), alpha.to_typ(), exp);
-            phi.insert(Precious(Left(alpha.dom()), Left(t1)));
-            phi.insert(Precious(Left(alpha.cod()), Left(t2)));
+            phi.insert(Precious(Left(alpha.dom()), Left(t1.clone())));
+            phi.insert(Precious(Left(alpha.cod()), Left(t2.clone())));
+            phi.insert(Precious(Left(t1), Left(alpha.dom())));
+            phi.insert(Precious(Left(t2.clone()), Left(alpha.cod())));
             g.insert(g.len(), hashset![funt.clone(), alpha.clone()]);
             (alpha, phi, g)
         },
@@ -53,10 +55,13 @@ fn constraint_gen(exp: &mut Exp, env: &Env) -> (MetaVar, CSet, FGraph) {
             let mut g = fgraph_union(g1, g2);
             let alpha = next_metavar();
             let beta = next_metavar();
-            let funt = MetaVar::Arr(Box::new(alpha.clone()), Box::new(t2.clone()));
+            let funt = MetaVar::Arr(Box::new(alpha.clone()), Box::new(beta.clone()));
             coerce(t1.to_typ(), funt.to_typ(), e1);
+            coerce(t2.to_typ(), alpha.to_typ(), e2);
             phi.insert(Precious(Left(t1.dom()), Left(alpha.clone())));
-            phi.insert(Precious(Left(t1.cod()), Left(t2.clone())));
+            phi.insert(Precious(Left(t1.cod()), Left(beta.clone())));
+            phi.insert(Precious(Left(t2.clone()), Left(alpha.clone())));
+            phi.insert(Precious(Left(alpha.clone()), Left(t2.clone())));
             g.insert(g.len(), hashset![funt.clone(), t1.clone()]);
             (beta, phi, g)
         },

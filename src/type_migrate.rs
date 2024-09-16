@@ -22,7 +22,7 @@ pub type Ans = HashMap<MetaVar, ATyp>;
 
 // Entry Point
 pub fn type_infer(mut exp: Exp, env: &Env) -> Result<Exp, String> {
-    let cmode = true;
+    let cmode = false;
     let (phi, g) = cgen(&mut exp, env);
     let mut sigma = csolve(&phi, &g, &exp, cmode);
     annotate(&mut sigma, &mut exp, &g, cmode);
@@ -134,7 +134,7 @@ mod test {
 
     #[test]
     fn fun_app() {
-        test_migrate("(fun f . f true) (fun x . x + 100)");
+        test_migrate("(fun f. f true + (fun g.g 5) f) (fun x.5)");
     }
 
     #[test]
