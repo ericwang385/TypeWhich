@@ -119,7 +119,7 @@ mod test {
 
     #[test]
     fn bool_add() {
-        test_migrate("true + false");
+        test_migrate("(fun y. if (y true) then 2 else y + 1) (fun x. if x then true else 3)");
     }
 
     #[test]
