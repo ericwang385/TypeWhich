@@ -198,39 +198,8 @@ fn completion(sigma: &mut Ans, exp: &Exp, g: &FGraph, relax_var: &mut HashSet<St
         Exp::Coerce(_, _, e) => {
             completion(sigma, e, g, relax_var);
         }
-        Exp::App(e1, e2) => {
-            match *e2.clone() {
-                Exp::Coerce(_,_, e) => {
-                    match *e {
-                        Exp::Coerce(_,t, ee) => {
-                            match *ee {
-                                Exp::Var(x) => {
-                                    if relax_var.contains(&x) {
-                                        completion(sigma, e1, g, relax_var);
-                                        completion_typ(sigma, &t);
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                _ => {}
-            }
-        }
         _ => {}
     }
-    // for (k, v) in g.iter() {
-    //     for t in v.iter() {
-    //         match sigma.get(t) {
-    //             None => {
-    //                 todo!()
-    //             }
-    //             Some(_) => {}
-    //         }
-    //     }
-    // }
 }
 
 pub fn csolve(phi: &CSet, g: &FGraph, exp: &Exp, cmode: bool) -> Ans {
